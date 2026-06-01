@@ -1,0 +1,459 @@
+-- =============================================================================
+-- RAG Analytics — Complete PostgreSQL Setup Script
+-- Compatible with: n8n workflow "llamaIndex_fallback_report" v3.2
+-- Run this once on a fresh database, or safely re-run on an existing one.
+-- All statements are idempotent (CREATE IF NOT EXISTS, ALTER … IF NOT EXISTS).
+-- =============================================================================
+
+-- =============================================================================
+-- SECTION 1 — Schema
+-- =============================================================================
+
+CREATE SCHEMA IF NOT EXISTS rag_analytics;
+
+
+-- =============================================================================
+-- SECTION 2 — Base tables
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 2a. session_logs
+--     One row per workflow execution.
+--     Populated by: "Store Session Data - Execute Query" node.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rag_analytics.session_logs (
+    id                    SERIAL PRIMARY KEY,
+
+    -- Identity
+    session_id            VARCHAR(255)   NOT NULL UNIQUE,
+    timestamp             TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    created_at            TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+
+    -- Runtime config (from enhanced_monitoring_summary.runtime_configuration)
+    llm_model             VARCHAR(255)   NOT NULL DEFAULT 'unknown',
+    embedding_model       VARCHAR(255)   NOT NULL DEFAULT 'unknown',
+    chunk_size            INTEGER        NOT NULL DEFAULT 0,
+    chunk_overlap         INTEGER        NOT NULL DEFAULT 0,
+    similarity_top_k      INTEGER        NOT NULL DEFAULT 0,
+
+    -- File references
+    resume_file           TEXT           NOT NULL DEFAULT 'unknown',
+    application_form      TEXT           NOT NULL DEFAULT 'unknown',
+
+    -- Confidence metrics
+    overall_confidence    NUMERIC(6, 4)  NOT NULL DEFAULT 0,
+    confidence_health_score INTEGER      NOT NULL DEFAULT 0,
+    total_fields_processed  INTEGER      NOT NULL DEFAULT 0,
+
+    -- Feedback / user-satisfaction metrics
+    feedback_requests     INTEGER        NOT NULL DEFAULT 0,
+    total_fields_modified INTEGER        NOT NULL DEFAULT 0,
+    modification_rate     NUMERIC(8, 4)  NOT NULL DEFAULT 0,
+    feedback_efficiency   NUMERIC(8, 4)  NOT NULL DEFAULT 1,
+    user_satisfaction     INTEGER        NOT NULL DEFAULT 0,
+
+    -- Performance metrics
+    execution_time        NUMERIC(10, 3) NOT NULL DEFAULT 0,
+    success_rate          NUMERIC(6, 4)  NOT NULL DEFAULT 1,
+    average_step_time     NUMERIC(10, 3) NOT NULL DEFAULT 0,
+    bottleneck_step       VARCHAR(255)   NOT NULL DEFAULT 'unknown',
+    bottleneck_time       NUMERIC(10, 3) NOT NULL DEFAULT 0,
+    performance_variance  INTEGER        NOT NULL DEFAULT 0,
+
+    -- Alert / health
+    alert_severity        VARCHAR(50)    NOT NULL DEFAULT 'INFO',
+    health_score          INTEGER        NOT NULL DEFAULT 0,
+    critical_issues_count INTEGER        NOT NULL DEFAULT 0,
+    warnings_count        INTEGER        NOT NULL DEFAULT 0,
+
+    -- Raw payload (for Grafana ad-hoc queries and debugging)
+    step_times_json       JSONB,
+    raw_data_json         JSONB
+);
+
+-- ---------------------------------------------------------------------------
+-- 2b. field_analytics
+--     One row per field per workflow execution.
+--     Populated by: "Store Field Analytics" node (after "Code in JavaScript"
+--     filters record_type = 'field_analytics').
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rag_analytics.field_analytics (
+    id                      SERIAL PRIMARY KEY,
+
+    -- Identity / FK
+    session_id              VARCHAR(255)  NOT NULL,
+    timestamp               TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+
+    -- Field identity
+    field_name              VARCHAR(255)  NOT NULL,
+    original_field_name     TEXT,
+
+    -- Confidence stats
+    avg_confidence          NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    min_confidence          NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    max_confidence          NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    confidence_variance     NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    stability_score         NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    sample_count            INTEGER       NOT NULL DEFAULT 0,
+
+    -- Health
+    health_status           VARCHAR(50)   NOT NULL DEFAULT 'UNKNOWN',
+    needs_optimization      BOOLEAN       NOT NULL DEFAULT FALSE,
+
+    -- Runtime config (denormalised for Grafana filter convenience)
+    llm_model               VARCHAR(255)  NOT NULL DEFAULT 'unknown',
+    embedding_model         VARCHAR(255)  NOT NULL DEFAULT 'unknown',
+    chunk_size              INTEGER       NOT NULL DEFAULT 0,
+    chunk_overlap           INTEGER       NOT NULL DEFAULT 0,
+    similarity_top_k        INTEGER       NOT NULL DEFAULT 0,
+    resume_file             TEXT,
+
+    -- Raw score array (for time-series drill-down)
+    confidence_scores_json  JSONB,
+
+    -- Diagnostics
+    processing_timestamp    TIMESTAMPTZ,
+    field_error             TEXT,
+
+    CONSTRAINT fk_field_session
+        FOREIGN KEY (session_id)
+        REFERENCES rag_analytics.session_logs (session_id)
+        ON DELETE CASCADE
+);
+
+-- ---------------------------------------------------------------------------
+-- 2c. confidence_scores
+--     One row per individual confidence score per field per session.
+--     Populated by: "Store Confidence Scores" node
+--     (record_type = 'confidence_score' items from "Process Field Data v3.0").
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rag_analytics.confidence_scores (
+    id                  SERIAL PRIMARY KEY,
+
+    session_id          VARCHAR(255)  NOT NULL,
+    timestamp           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+
+    field_name          VARCHAR(255)  NOT NULL,
+    confidence_score    NUMERIC(6, 4) NOT NULL DEFAULT 0,
+    score_sequence      INTEGER       NOT NULL DEFAULT 1,
+
+    -- Runtime config (denormalised for Grafana filter convenience)
+    llm_model           VARCHAR(255)  NOT NULL DEFAULT 'unknown',
+    embedding_model     VARCHAR(255)  NOT NULL DEFAULT 'unknown',
+    chunk_size          INTEGER       NOT NULL DEFAULT 0,
+    chunk_overlap       INTEGER       NOT NULL DEFAULT 0,
+    similarity_top_k    INTEGER       NOT NULL DEFAULT 0,
+
+    CONSTRAINT fk_cs_session
+        FOREIGN KEY (session_id)
+        REFERENCES rag_analytics.session_logs (session_id)
+        ON DELETE CASCADE
+);
+
+-- ---------------------------------------------------------------------------
+-- 2d. feedback_analytics
+--     One row per feedback iteration per session.
+--     Populated by: "Store Feedback Analytics" node.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rag_analytics.feedback_analytics (
+    id                      SERIAL PRIMARY KEY,
+
+    session_id              VARCHAR(255)   NOT NULL,
+    timestamp               TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    created_at              TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+
+    iteration_number        INTEGER        NOT NULL DEFAULT 1,
+    fields_modified_count   INTEGER        NOT NULL DEFAULT 0,
+    fields_modified_list    TEXT[],
+    feedback_details        JSONB,
+    modification_rate       NUMERIC(8, 4)  NOT NULL DEFAULT 0,
+
+    -- Runtime config (for model-level feedback analysis)
+    llm_model               VARCHAR(255)   NOT NULL DEFAULT 'unknown',
+    embedding_model         VARCHAR(255)   NOT NULL DEFAULT 'unknown',
+
+    CONSTRAINT fk_fb_session
+        FOREIGN KEY (session_id)
+        REFERENCES rag_analytics.session_logs (session_id)
+        ON DELETE CASCADE
+);
+
+
+-- =============================================================================
+-- SECTION 3 — Indexes
+-- =============================================================================
+
+-- session_logs
+CREATE INDEX IF NOT EXISTS idx_sl_timestamp        ON rag_analytics.session_logs (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_sl_alert_severity   ON rag_analytics.session_logs (alert_severity);
+CREATE INDEX IF NOT EXISTS idx_sl_llm_model        ON rag_analytics.session_logs (llm_model);
+CREATE INDEX IF NOT EXISTS idx_sl_embedding_model  ON rag_analytics.session_logs (embedding_model);
+CREATE INDEX IF NOT EXISTS idx_sl_config           ON rag_analytics.session_logs (chunk_size, chunk_overlap, similarity_top_k);
+CREATE INDEX IF NOT EXISTS idx_sl_confidence       ON rag_analytics.session_logs (overall_confidence);
+
+-- field_analytics
+CREATE INDEX IF NOT EXISTS idx_fa_session_id       ON rag_analytics.field_analytics (session_id);
+CREATE INDEX IF NOT EXISTS idx_fa_timestamp        ON rag_analytics.field_analytics (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_fa_field_name       ON rag_analytics.field_analytics (field_name);
+CREATE INDEX IF NOT EXISTS idx_fa_health_status    ON rag_analytics.field_analytics (health_status);
+CREATE INDEX IF NOT EXISTS idx_fa_confidence       ON rag_analytics.field_analytics (avg_confidence);
+CREATE INDEX IF NOT EXISTS idx_fa_config           ON rag_analytics.field_analytics (llm_model, embedding_model, chunk_size);
+
+-- confidence_scores
+CREATE INDEX IF NOT EXISTS idx_cs_session_field    ON rag_analytics.confidence_scores (session_id, field_name);
+CREATE INDEX IF NOT EXISTS idx_cs_timestamp        ON rag_analytics.confidence_scores (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_cs_field_name       ON rag_analytics.confidence_scores (field_name);
+
+-- feedback_analytics
+CREATE INDEX IF NOT EXISTS idx_fb_session_id       ON rag_analytics.feedback_analytics (session_id);
+CREATE INDEX IF NOT EXISTS idx_fb_timestamp        ON rag_analytics.feedback_analytics (timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_fb_llm_model        ON rag_analytics.feedback_analytics (llm_model);
+
+
+-- =============================================================================
+-- SECTION 4 — Materialized views (Grafana dashboard sources)
+-- =============================================================================
+
+-- Drop and recreate so the column list always matches the current base tables.
+-- Safe to run repeatedly — the triggers are re-created in Section 5.
+
+DROP MATERIALIZED VIEW IF EXISTS rag_analytics.field_performance CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS rag_analytics.dashboard_metrics  CASCADE;
+
+-- ---------------------------------------------------------------------------
+-- 4a. dashboard_metrics  — hourly roll-up, last 7 days
+--     Grafana: time-series panels, alert counts, satisfaction trends.
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW rag_analytics.dashboard_metrics AS
+SELECT
+    DATE_TRUNC('hour', sl.timestamp)                                         AS time_bucket,
+    COUNT(*)                                                                  AS total_sessions,
+
+    -- Confidence
+    AVG(sl.overall_confidence)                                                AS avg_confidence,
+    AVG(sl.confidence_health_score)                                           AS avg_health_score,
+
+    -- User experience
+    AVG(sl.user_satisfaction)                                                 AS avg_user_satisfaction,
+    AVG(sl.modification_rate)                                                 AS avg_modification_rate,
+    AVG(sl.feedback_efficiency)                                               AS avg_feedback_efficiency,
+
+    -- Performance
+    AVG(sl.execution_time)                                                    AS avg_execution_time,
+    AVG(sl.average_step_time)                                                 AS avg_step_time,
+    MAX(sl.execution_time)                                                    AS max_execution_time,
+
+    -- Alerts
+    COUNT(*) FILTER (WHERE sl.alert_severity = 'CRITICAL')                    AS critical_alerts,
+    COUNT(*) FILTER (WHERE sl.alert_severity = 'WARNING')                     AS warning_alerts,
+
+    -- Health
+    AVG(sl.health_score)                                                      AS avg_overall_health,
+    SUM(sl.total_fields_processed)                                            AS total_fields_processed,
+
+    -- Model breakdown (useful for Grafana legend grouping)
+    sl.llm_model,
+    sl.embedding_model,
+
+    MAX(sl.timestamp)                                                         AS last_update
+FROM rag_analytics.session_logs sl
+WHERE sl.timestamp >= NOW() - INTERVAL '7 days'
+GROUP BY
+    DATE_TRUNC('hour', sl.timestamp),
+    sl.llm_model,
+    sl.embedding_model;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_time_model
+    ON rag_analytics.dashboard_metrics (time_bucket, llm_model, embedding_model);
+CREATE INDEX IF NOT EXISTS idx_dm_time_bucket
+    ON rag_analytics.dashboard_metrics (time_bucket DESC);
+
+-- ---------------------------------------------------------------------------
+-- 4b. field_performance  — per-field aggregate, last 30 days
+--     Grafana: field health tables, optimization priority lists.
+-- ---------------------------------------------------------------------------
+CREATE MATERIALIZED VIEW rag_analytics.field_performance AS
+SELECT
+    fa.field_name,
+    fa.llm_model,
+    fa.embedding_model,
+
+    COUNT(*)                                                                  AS total_sessions,
+    AVG(fa.avg_confidence)                                                    AS overall_avg_confidence,
+    MIN(fa.avg_confidence)                                                    AS min_confidence,
+    MAX(fa.avg_confidence)                                                    AS max_confidence,
+    AVG(fa.stability_score)                                                   AS avg_stability,
+    AVG(fa.confidence_variance)                                               AS avg_variance,
+
+    COUNT(*) FILTER (WHERE fa.needs_optimization)                             AS optimization_needed,
+    COUNT(*) FILTER (WHERE fa.health_status = 'CRITICAL')                     AS critical_count,
+    COUNT(*) FILTER (WHERE fa.health_status = 'WARNING')                      AS warning_count,
+    COUNT(*) FILTER (WHERE fa.health_status = 'HEALTHY')                      AS healthy_count,
+
+    MAX(fa.timestamp)                                                         AS last_update
+FROM rag_analytics.field_analytics fa
+WHERE fa.timestamp >= NOW() - INTERVAL '30 days'
+GROUP BY
+    fa.field_name,
+    fa.llm_model,
+    fa.embedding_model;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fp_field_model
+    ON rag_analytics.field_performance (field_name, llm_model, embedding_model);
+CREATE INDEX IF NOT EXISTS idx_fp_confidence
+    ON rag_analytics.field_performance (overall_avg_confidence);
+CREATE INDEX IF NOT EXISTS idx_fp_last_update
+    ON rag_analytics.field_performance (last_update DESC);
+
+
+-- =============================================================================
+-- SECTION 5 — Refresh function and triggers
+-- =============================================================================
+
+-- Single refresh function — only refreshes views that actually exist.
+CREATE OR REPLACE FUNCTION rag_analytics.refresh_views()
+RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+    v RECORD;
+BEGIN
+    FOR v IN
+        SELECT schemaname, matviewname
+        FROM   pg_matviews
+        WHERE  schemaname  = 'rag_analytics'
+          AND  matviewname IN ('dashboard_metrics', 'field_performance')
+    LOOP
+        EXECUTE format('REFRESH MATERIALIZED VIEW CONCURRENTLY %I.%I',
+                       v.schemaname, v.matviewname);
+    END LOOP;
+END;
+$$;
+
+-- Trigger function — called by both triggers below.
+CREATE OR REPLACE FUNCTION rag_analytics.auto_refresh_views()
+RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM rag_analytics.refresh_views();
+    RETURN NEW;
+END;
+$$;
+
+-- Trigger on session_logs — fires once per INSERT statement (not per row).
+-- Using FOR EACH STATEMENT keeps overhead proportional to batch size.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE  tgrelid = 'rag_analytics.session_logs'::regclass
+          AND  tgname   = 'refresh_views_trigger'
+    ) THEN
+        CREATE TRIGGER refresh_views_trigger
+            AFTER INSERT ON rag_analytics.session_logs
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION rag_analytics.auto_refresh_views();
+    END IF;
+END$$;
+
+-- Trigger on field_analytics — same pattern.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE  tgrelid = 'rag_analytics.field_analytics'::regclass
+          AND  tgname   = 'field_analytics_refresh_views_trigger'
+    ) THEN
+        CREATE TRIGGER field_analytics_refresh_views_trigger
+            AFTER INSERT ON rag_analytics.field_analytics
+            FOR EACH STATEMENT
+            EXECUTE FUNCTION rag_analytics.auto_refresh_views();
+    END IF;
+END$$;
+
+
+-- =============================================================================
+-- SECTION 6 — Initial MV population
+-- =============================================================================
+
+-- Perform a plain (non-concurrent) refresh on first run because CONCURRENT
+-- requires the MV to have at least one row or a unique index already populated.
+REFRESH MATERIALIZED VIEW rag_analytics.dashboard_metrics;
+REFRESH MATERIALIZED VIEW rag_analytics.field_performance;
+
+
+-- =============================================================================
+-- SECTION 7 — Verification queries
+--   Run these after setup to confirm everything is correct.
+-- =============================================================================
+
+-- 7a. Object inventory (expect: 4 tables r, 2 matviews m)
+SELECT n.nspname AS schema, c.relname AS name,
+       CASE c.relkind
+           WHEN 'r' THEN 'table'
+           WHEN 'm' THEN 'matview'
+           WHEN 'i' THEN 'index'
+       END AS kind
+FROM   pg_class     c
+JOIN   pg_namespace n ON n.oid = c.relnamespace
+WHERE  n.nspname = 'rag_analytics'
+  AND  c.relkind IN ('r', 'm')
+ORDER  BY c.relkind, c.relname;
+
+-- 7b. Column inventory for base tables
+SELECT table_name, column_name, data_type, is_nullable, column_default
+FROM   information_schema.columns
+WHERE  table_schema = 'rag_analytics'
+  AND  table_name   IN ('session_logs', 'field_analytics',
+                        'confidence_scores', 'feedback_analytics')
+ORDER  BY table_name, ordinal_position;
+
+-- 7c. FK constraints
+SELECT tc.table_name, kcu.column_name, ccu.table_name AS foreign_table
+FROM   information_schema.table_constraints        tc
+JOIN   information_schema.key_column_usage         kcu ON tc.constraint_name = kcu.constraint_name
+JOIN   information_schema.constraint_column_usage  ccu ON ccu.constraint_name = tc.constraint_name
+WHERE  tc.constraint_type = 'FOREIGN KEY'
+  AND  tc.constraint_schema = 'rag_analytics';
+
+-- 7d. Index inventory
+SELECT tablename, indexname
+FROM   pg_indexes
+WHERE  schemaname = 'rag_analytics'
+ORDER  BY tablename, indexname;
+
+-- 7e. Triggers
+SELECT event_object_table AS tbl, trigger_name, action_timing, event_manipulation
+FROM   information_schema.triggers
+WHERE  event_object_schema = 'rag_analytics'
+ORDER  BY event_object_table, trigger_name;
+
+-- 7f. Row counts (will be 0 on first run — that is expected)
+SELECT 'session_logs'      AS tbl, COUNT(*) AS rows FROM rag_analytics.session_logs
+UNION ALL
+SELECT 'field_analytics',         COUNT(*)         FROM rag_analytics.field_analytics
+UNION ALL
+SELECT 'confidence_scores',       COUNT(*)         FROM rag_analytics.confidence_scores
+UNION ALL
+SELECT 'feedback_analytics',      COUNT(*)         FROM rag_analytics.feedback_analytics
+UNION ALL
+SELECT 'dashboard_metrics (mv)',  COUNT(*)         FROM rag_analytics.dashboard_metrics
+UNION ALL
+SELECT 'field_performance (mv)',  COUNT(*)         FROM rag_analytics.field_performance;
+
+-- 7g. Orphan check (expect 0 after any workflow run)
+SELECT 'orphan field_analytics'   AS check_name, COUNT(*) AS orphans
+FROM   rag_analytics.field_analytics  fa
+LEFT JOIN rag_analytics.session_logs  sl ON sl.session_id = fa.session_id
+WHERE  sl.session_id IS NULL
+UNION ALL
+SELECT 'orphan confidence_scores', COUNT(*)
+FROM   rag_analytics.confidence_scores cs
+LEFT JOIN rag_analytics.session_logs   sl ON sl.session_id = cs.session_id
+WHERE  sl.session_id IS NULL
+UNION ALL
+SELECT 'orphan feedback_analytics', COUNT(*)
+FROM   rag_analytics.feedback_analytics fb
+LEFT JOIN rag_analytics.session_logs    sl ON sl.session_id = fb.session_id
+WHERE  sl.session_id IS NULL;

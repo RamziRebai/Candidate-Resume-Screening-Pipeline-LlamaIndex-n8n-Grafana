@@ -1,0 +1,446 @@
+{
+  "name": "llamaIndex_fallback_report",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rag-report-processor",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "ff1dd4b1-0dba-4dc9-84b8-7d59cc488219",
+      "name": "RAG Report Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1328,
+        -272
+      ],
+      "webhookId": "rag-report-processor"
+    },
+    {
+      "parameters": {
+        "jsCode": "// RAG Analytics Engine v3.2 - ROUTING UPDATE\n// This version outputs ONLY to \"Store Session Data\" - no parallel connections\n// Author: Enhanced by Claude for RamziRebai\n\nconst nowIso = () => new Date().toISOString();\n\n// Enhanced field name cleaning with better sanitization\nconst cleanFieldName = (fieldName) => {\n  if (!fieldName || typeof fieldName !== 'string') {\n    return 'unknown_field';\n  }\n  \n  let cleaned = fieldName\n    .replace(/\\n+/g, ' ')           // Replace newlines with space\n    .replace(/\\s+/g, ' ')           // Replace multiple spaces with single space\n    .replace(/[^\\w\\s-]/g, '_')      // Replace special chars with underscore\n    .trim();                        // Remove leading/trailing whitespace\n  \n  if (cleaned.length > 255) {\n    cleaned = cleaned.substring(0, 255);\n  }\n  \n  return cleaned || 'unknown_field';\n};\n\n// Helpers\nconst asNumber = (v, d = 0) => {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : d;\n};\n\nconst safeGet = (obj, path, defaultValue) => {\n  try {\n    if (!obj) return defaultValue;\n    const value = path.split('.').reduce(\n      (curr, key) => (curr != null && curr[key] !== undefined ? curr[key] : undefined),\n      obj\n    );\n    return value !== undefined ? value : defaultValue;\n  } catch {\n    return defaultValue;\n  }\n};\n\n// Calculate modification rate from user feedback analysis\nconst calculateModificationRate = (feedbackData) => {\n  const totalFeedbackRequests = asNumber(feedbackData.total_feedback_requests, 0);\n  const totalFieldsModified = asNumber(feedbackData.total_fields_modified, 0);\n  \n  if (totalFeedbackRequests === 0) return 0;\n  return totalFieldsModified / totalFeedbackRequests;\n};\n\n// Get first input item\nconst firstItem = $input.first();\nconst baseJson = (firstItem && firstItem.json) ? firstItem.json : {};\n\n// Extract raw data with better error handling\nlet rawData;\ntry {\n  const candidate = baseJson.hasOwnProperty('body') ? baseJson.body : baseJson;\n\n  if (candidate == null) {\n    throw new Error('No request body found');\n  }\n\n  if (typeof candidate === 'string') {\n    rawData = JSON.parse(candidate);\n  } else if (typeof candidate === 'object') {\n    rawData = candidate;\n  } else {\n    throw new Error('Unsupported body type');\n  }\n} catch (e) {\n  return [{\n    json: {\n      error: 'CRITICAL_DATA_EXTRACTION_FAILURE',\n      details: e.message,\n      timestamp: nowIso(),\n      processed_by: 'RamziRebai',\n      workflow_version: '3.2'\n    }\n  }];\n}\n\n// Validate structure\nif (!rawData || typeof rawData !== 'object' || !rawData.enhanced_monitoring_summary) {\n  const availableKeys = rawData && typeof rawData === 'object' ? Object.keys(rawData) : [];\n  return [{\n    json: {\n      error: 'INVALID_RAG_REPORT_STRUCTURE',\n      details: `Missing enhanced_monitoring_summary. Available keys: ${availableKeys.join(', ')}`,\n      timestamp: nowIso(),\n      processed_by: 'RamziRebai',\n      workflow_version: '3.2'\n    }\n  }];\n}\n\n// Extract components\nconst summary = rawData.enhanced_monitoring_summary || {};\nconst confidenceData = summary.confidence_analysis || {};\nconst feedbackData = summary.user_feedback_analysis || {};\nconst stepTimes = summary.step_times || {};\nconst fieldDetails = rawData.field_confidence_details || {};\n\n// Session metadata\nconst sessionId = `rag_${Date.now()}_ramzi_v32_${Math.random().toString(36).substr(2, 8)}`;\nconst timestamp = nowIso();\nconst processingStartTime = Date.now();\n\n// Extract configuration for better tracking\nconst runtimeConfig = summary.runtime_configuration || {};\nconst llmModel = runtimeConfig.LLM_MODEL || 'unknown';\nconst embeddingModel = runtimeConfig.EMBEDDING_MODEL || 'unknown';\nconst chunkSize = asNumber(runtimeConfig.CHUNK_SIZE, 0);\nconst chunkOverlap = asNumber(runtimeConfig.CHUNK_OVERLAP, 0);\nconst similarityTopK = asNumber(runtimeConfig.SIMILARITY_TOP_K, 0);\n\n// File information\nconst inputFiles = summary.input_files || {};\nconst resumeFile = inputFiles.resume_file || 'unknown';\nconst applicationForm = inputFiles.application_form || 'unknown';\n\n// PRIMARY METRICS\nconst overallConfidence = asNumber(confidenceData.overall_average, 0);\nconst confidenceHealthScore = Math.round(((overallConfidence || 0) / 0.6) * 100);\nconst totalFieldsProcessed = asNumber(confidenceData.total_fields_processed, 0);\n\n// Field analytics with enhanced processing\nconst fieldAverages = confidenceData.field_averages || {};\nconst fieldAnalytics = Object.entries(fieldAverages).map(([originalFieldName, data]) => {\n  try {\n    const cleanedFieldName = cleanFieldName(originalFieldName);\n    const confidenceScores = fieldDetails[originalFieldName] || [];\n    const avgConf = asNumber(data.average, 0);\n    const minConf = asNumber(data.min, 0);\n    const maxConf = asNumber(data.max, 0);\n    const variance = Math.abs(maxConf - minConf);\n    const stability = avgConf > 0 ? Math.max(0, Math.min(1, 1 - variance / avgConf)) : 0;\n\n    return {\n      field_name: cleanedFieldName,\n      original_field_name: originalFieldName,\n      avg_confidence: Math.round(avgConf * 1000) / 1000,\n      min_confidence: Math.round(minConf * 1000) / 1000,\n      max_confidence: Math.round(maxConf * 1000) / 1000,\n      confidence_variance: Math.round(variance * 1000) / 1000,\n      stability_score: Math.round(stability * 1000) / 1000,\n      sample_count: asNumber(data.count, 0),\n      health_status: avgConf >= 0.6 ? 'HEALTHY' : avgConf >= 0.4 ? 'WARNING' : 'CRITICAL',\n      needs_optimization: avgConf < 0.5 || variance > 0.15,\n      confidence_scores: confidenceScores,\n      processing_timestamp: timestamp\n    };\n  } catch (e) {\n    return {\n      field_name: cleanFieldName(originalFieldName),\n      original_field_name: originalFieldName,\n      avg_confidence: 0,\n      min_confidence: 0,\n      max_confidence: 0,\n      confidence_variance: 0,\n      stability_score: 0,\n      sample_count: 0,\n      health_status: 'ERROR',\n      needs_optimization: true,\n      confidence_scores: [],\n      processing_timestamp: timestamp,\n      error: e.message\n    };\n  }\n});\n\n// ENHANCED FEEDBACK METRICS\nconst totalFeedbackRequests = asNumber(feedbackData.total_feedback_requests, 0);\nconst totalFieldsModified = asNumber(feedbackData.total_fields_modified, 0);\nconst modificationRate = calculateModificationRate(feedbackData);\nconst feedbackEfficiency = Math.max(0, 1 - modificationRate);\n\n// PERFORMANCE METRICS with step analysis\nconst totalExecutionTime = asNumber(summary.total_execution_time, 0);\nconst successRate = asNumber(summary.success_rate, 1);\nconst totalSteps = asNumber(summary.total_steps, 0);\nconst successfulSteps = asNumber(summary.successful_steps, 0);\n\n// Enhanced step analysis\nconst stepTimeValues = Object.values(stepTimes)\n  .map((v) => asNumber(v, NaN))\n  .filter((v) => Number.isFinite(v));\n\nlet bottleneckStep = 'unknown';\nlet bottleneckTime = 0;\nlet averageStepTime = 0;\n\nif (stepTimeValues.length > 0) {\n  // Find bottleneck\n  const [step, time] = Object.entries(stepTimes).reduce((a, b) =>\n    (asNumber(stepTimes[a[0]], 0) > asNumber(stepTimes[b[0]], 0) ? a : b)\n  );\n  bottleneckStep = step;\n  bottleneckTime = asNumber(time, 0);\n  \n  // Calculate average step time\n  averageStepTime = stepTimeValues.reduce((a, b) => a + b, 0) / stepTimeValues.length;\n}\n\nconst performanceVariance = stepTimeValues.length > 0\n  ? Math.round(((Math.max(...stepTimeValues) - Math.min(...stepTimeValues)) / (averageStepTime || 1)) * 100)\n  : 0;\n\n// COMPREHENSIVE OUTPUT - includes all data for downstream processing\nconst output = {\n  session_id: sessionId,\n  timestamp: timestamp,\n  \n  // Configuration tracking (FIXED: now properly extracted)\n  llm_model: llmModel,\n  embedding_model: embeddingModel,\n  chunk_size: chunkSize,\n  chunk_overlap: chunkOverlap,\n  similarity_top_k: similarityTopK,\n  \n  // File tracking\n  resume_file: resumeFile,\n  application_form: applicationForm,\n  \n  // Performance metrics (ENHANCED)\n  execution_time: totalExecutionTime,\n  success_rate: successRate,\n  average_step_time: averageStepTime,\n  bottleneck_step: bottleneckStep,\n  bottleneck_time: bottleneckTime,\n  performance_variance: performanceVariance,\n  \n  // Step-level timing for dashboard analysis\n  step_times_json: JSON.stringify(stepTimes),\n  \n  // Confidence metrics (FIXED: total_fields_processed now included)\n  overall_confidence: overallConfidence,\n  confidence_health_score: confidenceHealthScore,\n  total_fields_processed: totalFieldsProcessed,\n  \n  // Enhanced feedback metrics\n  feedback_requests: totalFeedbackRequests,\n  total_fields_modified: totalFieldsModified,\n  modification_rate: modificationRate,\n  feedback_efficiency: feedbackEfficiency,\n  user_satisfaction: Math.round((1 - modificationRate) * 100),\n  \n  // Health assessment\n  alert_severity: overallConfidence < 0.4 || totalExecutionTime > 180 || modificationRate > 0.5 ? 'CRITICAL' : \n                 overallConfidence < 0.6 || totalExecutionTime > 120 ? 'WARNING' : 'INFO',\n  \n  health_score: Math.round((confidenceHealthScore + Math.round((1 - modificationRate) * 100) + (successRate * 100)) / 3),\n  \n  // Metadata\n  workflow_version: '3.2',\n  processed_by: 'RamziRebai',\n  processing_duration_ms: Date.now() - processingStartTime,\n  \n  // Raw data preservation for feedback processing and advanced analytics\n  raw_data_json: JSON.stringify(rawData),\n  \n  // Field analytics for field processing\n  field_analytics: fieldAnalytics,\n  \n  // Feedback data for feedback processing \n  feedback_iterations: feedbackData.feedback_iterations || [],\n  \n  // Enhanced monitoring summary for other nodes\n  enhanced_monitoring_summary: summary\n};\n\n// CRITICAL: Return single output that goes ONLY to \"Store Session Data\"\n// All other processing will happen after the session is stored\nreturn [{ json: output }];"
+      },
+      "id": "654929c3-d535-483c-8094-8258cdcb7bbc",
+      "name": "RAG Analytics Engine v3.0",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1056,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Enhanced Session Logs Insert Query with Routing\n-- This SQL goes in your \"Store Session Data\" PostgreSQL node\n-- After successful insert, the complete data flows to multiple downstream nodes\n\nINSERT INTO rag_analytics.session_logs (\n  session_id, timestamp, execution_time, success_rate, overall_confidence,\n  confidence_health_score, feedback_requests, modification_rate, user_satisfaction,\n  alert_severity, health_score, llm_model, embedding_model,\n  chunk_size, chunk_overlap, similarity_top_k, resume_file, application_form,\n  average_step_time, bottleneck_step, bottleneck_time, performance_variance,\n  total_fields_processed, total_fields_modified, feedback_efficiency, \n  critical_issues_count, warnings_count, step_times_json, raw_data_json, created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.timestamp }}',\n  {{ $json.execution_time || 0 }},\n  {{ $json.success_rate || 1 }},\n  {{ $json.overall_confidence || 0 }},\n  {{ $json.confidence_health_score || 0 }},\n  {{ $json.feedback_requests || 0 }},\n  {{ $json.modification_rate || 0 }},\n  {{ $json.user_satisfaction || 0 }},\n  '{{ $json.alert_severity || \"INFO\" }}',\n  {{ $json.health_score || 0 }},\n  '{{ $json.llm_model || \"unknown\" }}',\n  '{{ $json.embedding_model || \"unknown\" }}',\n  {{ $json.chunk_size || 0 }},\n  {{ $json.chunk_overlap || 0 }},\n  {{ $json.similarity_top_k || 0 }},\n  '{{ $json.resume_file || \"unknown\" }}',\n  '{{ $json.application_form || \"unknown\" }}',\n  {{ $json.average_step_time || 0 }},\n  '{{ $json.bottleneck_step || \"unknown\" }}',\n  {{ $json.bottleneck_time || 0 }},\n  {{ $json.performance_variance || 0 }},\n  {{ $json.total_fields_processed || 0 }},\n  {{ $json.total_fields_modified || 0 }},\n  {{ $json.feedback_efficiency || 1 }},\n  {{ $json.critical_issues_count || 0 }},\n  {{ $json.warnings_count || 0 }},\n  $${{ $json.step_times_json || \"{}\" }}$$::jsonb,\n  $${{ $json.raw_data_json || \"{}\" }}$$::jsonb,\n  NOW()\n)\nRETURNING session_id, created_at;",
+        "options": {}
+      },
+      "id": "4af67f32-75dd-4483-985f-e7dff2bc4da2",
+      "name": "Store Session Data - Execute Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -752,
+        -304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced Field Data Processor - Fixed null handling\n\nconst nowIso = () => new Date().toISOString();\nconst asNumber = (v, d = 0) => {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : d;\n};\n\ntry {\n  const items = $input.all();\n  \n  if (!items || items.length === 0) {\n    return [];\n  }\n\n  const out = [];\n\n  for (const it of items) {\n    const base = it && it.json ? it.json : {};\n    const fieldAnalytics = base.field_analytics;\n\n    if (!Array.isArray(fieldAnalytics) || fieldAnalytics.length === 0) {\n      continue;\n    }\n\n    const sessionId = base.session_id || `rag_${Date.now().toString(36)}`;\n    const timestamp = base.timestamp || nowIso();\n    \n    // Extract configuration for each field record\n    const llmModel = base.llm_model || 'unknown';\n    const embeddingModel = base.embedding_model || 'unknown';\n    const chunkSize = asNumber(base.chunk_size, 0);\n    const chunkOverlap = asNumber(base.chunk_overlap, 0);\n    const similarityTopK = asNumber(base.similarity_top_k, 0);\n    const resumeFile = base.resume_file || 'unknown';\n\n    for (let index = 0; index < fieldAnalytics.length; index++) {\n      const field = fieldAnalytics[index] || {};\n      \n      try {\n        const fieldName = field.field_name || `unknown_field_${index + 1}`;\n        const originalFieldName = field.original_field_name || fieldName;\n        const healthStatus = (typeof field.health_status === 'string' && field.health_status.length)\n          ? field.health_status\n          : 'UNKNOWN';\n\n        // Individual confidence scores for time-series analysis\n        const confidenceScores = Array.isArray(field.confidence_scores) ? field.confidence_scores : [];\n        \n        // FIXED: Handle field_error properly - use empty string instead of null\n        const fieldError = field.error ? String(field.error) : '';\n        \n        // Create main field record\n        const fieldRecord = {\n          session_id: sessionId,\n          timestamp: timestamp,\n          field_name: fieldName,\n          original_field_name: originalFieldName,\n          avg_confidence: asNumber(field.avg_confidence, 0),\n          min_confidence: asNumber(field.min_confidence, 0),\n          max_confidence: asNumber(field.max_confidence, 0),\n          confidence_variance: asNumber(field.confidence_variance, 0),\n          stability_score: asNumber(field.stability_score, 0),\n          health_status: healthStatus,\n          needs_optimization: !!field.needs_optimization,\n          sample_count: asNumber(field.sample_count, 0),\n          \n          // Configuration tracking per field\n          llm_model: llmModel,\n          embedding_model: embeddingModel,\n          chunk_size: chunkSize,\n          chunk_overlap: chunkOverlap,\n          similarity_top_k: similarityTopK,\n          resume_file: resumeFile,\n          \n          // Store confidence scores as JSON for detailed analysis\n          confidence_scores_json: JSON.stringify(confidenceScores),\n          \n          processing_timestamp: field.processing_timestamp || timestamp,\n          field_error: fieldError,  // FIXED: Now properly handles null/undefined\n          \n          // Add record type for routing\n          record_type: 'field_analytics'\n        };\n\n        out.push({ json: fieldRecord });\n\n        // Create individual confidence score records for time-series analysis\n        confidenceScores.forEach((score, scoreIndex) => {\n          const confidenceRecord = {\n            session_id: sessionId,\n            timestamp: timestamp,\n            field_name: fieldName,\n            confidence_score: asNumber(score, 0),\n            score_sequence: scoreIndex + 1,\n            llm_model: llmModel,\n            embedding_model: embeddingModel,\n            chunk_size: chunkSize,\n            chunk_overlap: chunkOverlap,\n            similarity_top_k: similarityTopK,\n            record_type: 'confidence_score'\n          };\n\n          out.push({ json: confidenceRecord });\n        });\n\n      } catch (e) {\n        // Error fallback for field record\n        out.push({\n          json: {\n            session_id: sessionId,\n            timestamp: timestamp,\n            field_name: `error_field_${index + 1}`,\n            original_field_name: `error_field_${index + 1}`,\n            avg_confidence: 0,\n            min_confidence: 0,\n            max_confidence: 0,\n            confidence_variance: 0,\n            stability_score: 0,\n            health_status: 'ERROR',\n            needs_optimization: true,\n            sample_count: 0,\n            llm_model: llmModel,\n            embedding_model: embeddingModel,\n            chunk_size: chunkSize,\n            chunk_overlap: chunkOverlap,\n            similarity_top_k: similarityTopK,\n            resume_file: resumeFile,\n            confidence_scores_json: JSON.stringify([]),\n            processing_timestamp: timestamp,\n            field_error: e.message,  // Proper error message\n            record_type: 'field_analytics'\n          }\n        });\n      }\n    }\n  }\n\n  return out;\n  \n} catch {\n  return [];\n}"
+      },
+      "id": "c594aba1-6741-4c20-bc6d-a3c709ad3610",
+      "name": "Process Field Data v3.0",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rag_analytics.field_analytics (\n  session_id, timestamp, field_name, original_field_name,\n  avg_confidence, min_confidence, max_confidence,\n  confidence_variance, stability_score, health_status,\n  needs_optimization, sample_count,\n  llm_model, embedding_model, chunk_size, chunk_overlap, \n  similarity_top_k, resume_file, confidence_scores_json,\n  processing_timestamp, field_error, created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.timestamp }}',\n  '{{ $json.field_name }}',\n  '{{ $json.original_field_name || $json.field_name }}',\n  {{ $json.avg_confidence || 0 }},\n  {{ $json.min_confidence || 0 }},\n  {{ $json.max_confidence || 0 }},\n  {{ $json.confidence_variance || 0 }},\n  {{ $json.stability_score || 0 }},\n  '{{ $json.health_status || \"UNKNOWN\" }}',\n  {{ $json.needs_optimization || false }},\n  {{ $json.sample_count || 0 }},\n  '{{ $json.llm_model || \"unknown\" }}',\n  '{{ $json.embedding_model || \"unknown\" }}',\n  {{ $json.chunk_size || 0 }},\n  {{ $json.chunk_overlap || 0 }},\n  {{ $json.similarity_top_k || 0 }},\n  '{{ $json.resume_file || \"unknown\" }}',\n  $${{ $json.confidence_scores_json || \"[]\" }}$$::jsonb,\n  '{{ $json.processing_timestamp }}',\n  NULLIF(NULLIF('{{ $json.field_error }}', 'null'), ''),\n  NOW()\n)\nRETURNING id;",
+        "options": {}
+      },
+      "id": "b661f965-3ff9-4c9f-829d-30ba704bdb46",
+      "name": "Store Field Analytics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        592,
+        -480
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alert_severity }}",
+              "rightValue": "CRITICAL",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "id": "7d47e0e5-8f14-4f0b-9dfd-7a43aef86097"
+            },
+            {
+              "id": "3b100663-0985-4a64-a446-6656b9df8eb7",
+              "leftValue": "={{ $json.alert_severity }}",
+              "rightValue": "WARNING",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "4191aac8-73a7-41f0-b1cc-7056274d4c9f",
+      "name": "Critical Alert Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#your-alert-channel",
+          "mode": "name"
+        },
+        "text": "=🚨 *CRITICAL RAG SYSTEM ALERT v3.2*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📋 *SESSION INFORMATION*\n• *Session ID:* `{{ $json.session_id }}`\n• *Timestamp:* {{ $json.timestamp }}\n• *Version:* {{ $json.workflow_version }}\n• *Alert Level:* *{{ $json.alert_severity }}*\n• *Database Stored:* ✅ {{ $json.db_created_at }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💚 *SYSTEM HEALTH SCORE: {{ $json.health_score }}/100*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📊 *CONFIDENCE ANALYSIS*\n• *Overall Confidence:* {{ Math.round($json.overall_confidence * 100) }}% (Target: 60%+)\n• *Health Score:* {{ $json.confidence_health_score }}/100\n• *Fields Processed:* {{ $json.total_fields_processed }}\n\n🔴 *CRITICAL FIELDS* ({{ $json.field_analytics.filter(f => f.health_status === 'CRITICAL').length }})\n{{ $json.field_analytics.filter(f => f.health_status === 'CRITICAL').length > 0 ? $json.field_analytics.filter(f => f.health_status === 'CRITICAL').map(f => `   • *${f.field_name}:* ${Math.round(f.avg_confidence * 100)}% confidence`).join('\\n') : '   • None - All fields above critical threshold ✅' }}\n\n⚠️ *WARNING FIELDS* ({{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length }})\n{{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length > 0 ? $json.field_analytics.filter(f => f.health_status === 'WARNING').slice(0, 5).map(f => `   • ${f.field_name}: ${Math.round(f.avg_confidence * 100)}%`).join('\\n') : '   • None' }}\n{{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length > 5 ? `   ... and ${$json.field_analytics.filter(f => f.health_status === 'WARNING').length - 5} more` : '' }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚡ *PERFORMANCE METRICS*\n• *Execution Time:* {{ Math.round($json.execution_time) }}s\n• *Bottleneck Step:* `{{ $json.bottleneck_step }}` ({{ Math.round($json.bottleneck_time) }}s)\n• *Performance Variance:* {{ $json.performance_variance }}%\n• *Success Rate:* {{ Math.round($json.success_rate * 100) }}%\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔧 *SYSTEM CONFIGURATION*\n• *LLM Model:* {{ $json.llm_model }}\n• *Embedding Model:* {{ $json.embedding_model }}\n• *Chunk Size:* {{ $json.chunk_size }} | *Overlap:* {{ $json.chunk_overlap }}\n• *Similarity Top-K:* {{ $json.similarity_top_k }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📁 *PROCESSED FILES*\n• *Resume:* `{{ $json.resume_file.split('\\\\').pop() }}`\n• *Application Form:* `{{ $json.application_form.split('\\\\').pop() }}`\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎯 *ACTION REQUIRED*\n{{ $json.alert_severity === 'CRITICAL' ? '⚠️ *IMMEDIATE ATTENTION NEEDED*' : '📌 Review and optimize as needed' }}\n• Review {{ $json.field_analytics.filter(f => f.needs_optimization).length }} fields needing optimization\n• Address low confidence scores in critical fields\n• Consider adjusting chunk size or similarity parameters\n• Monitor performance bottlenecks\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n_Processed by {{ $json.processed_by }} | Workflow v{{ $json.workflow_version }}_\n_Processing took {{ $json.processing_duration_ms }}ms",
+        "otherOptions": {}
+      },
+      "id": "4a742e2a-2c21-49a9-91ca-608fef4b2b0b",
+      "name": "Send Critical Alert v3.0",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        688,
+        288
+      ],
+      "webhookId": "YOUR_SLACK_WEBHOOK_ID",
+      "credentials": {
+        "slackApi": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced Grafana Integration v3.0 - RAG Application Analytics\n// Transforms RAG analytics data into comprehensive Grafana annotations and metrics\n// Always returns an array of items: [{ json: {...} }]\n\nconst nowIso = () => new Date().toISOString();\n\ntry {\n  const items = $input.all() || [];\n  const out = [];\n\n  for (const it of items) {\n    const analytics = it?.json?.analytics;\n    const rawData = analytics?.raw_log_data?.enhanced_monitoring_summary;\n\n    if (!analytics || typeof analytics !== 'object') {\n      out.push({ json: { warning: 'No analytics data available', time: Date.now(), data: {} } });\n      continue;\n    }\n\n    const sessionId = analytics.session_id || `session_${Date.now()}`;\n    const tsNow = Date.now();\n    \n    // Extract core performance metrics\n    const totalExecutionTime = Number(rawData?.total_execution_time || analytics.performance?.total_execution_time || 0);\n    const stepTimes = rawData?.step_times || {};\n    const totalSteps = rawData?.total_steps || Object.keys(stepTimes).length;\n    const successfulSteps = rawData?.successful_steps || totalSteps;\n    const errorCount = rawData?.errors_count || 0;\n    \n    // Extract confidence metrics from raw data\n    const confidenceAnalysis = rawData?.confidence_analysis || analytics.confidence_metrics;\n    const overallConfidence = Math.round((confidenceAnalysis?.overall_average || analytics.confidence_metrics?.overall_confidence || 0) * 100);\n    const fieldsProcessed = confidenceAnalysis?.total_fields_processed || analytics.confidence_metrics?.fields_processed || 0;\n    const fieldAverages = confidenceAnalysis?.field_averages || {};\n    \n    // Calculate fields below threshold\n    const threshold = analytics.runtime_config?.MIN_CONFIDENCE_THRESHOLD || 0.6;\n    let fieldsBelowThreshold = 0;\n    Object.values(fieldAverages).forEach(field => {\n      if (field.average && field.average < threshold) {\n        fieldsBelowThreshold++;\n      }\n    });\n\n    // Extract feedback metrics\n    const feedbackAnalysis = rawData?.user_feedback_analysis || analytics.feedback_metrics;\n    const feedbackIterations = feedbackAnalysis?.total_feedback_requests || analytics.feedback_metrics?.total_feedback_iterations || 0;\n    const modificationRate = Math.round((feedbackAnalysis?.modification_rate || analytics.feedback_metrics?.modification_rate || 0) * 100);\n\n    // Extract system health metrics\n    const systemHealth = analytics.system_health || {};\n    const alertSeverity = String(systemHealth.alert_severity || 'INFO');\n    const healthRating = String(systemHealth.health_rating || analytics.business_intelligence?.health_rating || 'UNKNOWN');\n    const criticalIssuesCount = (systemHealth.critical_issues || []).length;\n    const warningsCount = (systemHealth.warnings || []).length;\n\n    // Extract business metrics\n    const businessIntel = analytics.business_intelligence || {};\n    const userSatisfaction = Number(businessIntel.user_satisfaction_score || 0);\n    const systemEfficiency = Number(businessIntel.system_efficiency_score || 0);\n    const processingQuality = Number(businessIntel.processing_quality_score || 0);\n\n    // Extract runtime configuration\n    const runtimeConfig = rawData?.runtime_configuration || analytics.runtime_config || {};\n    const llmModel = runtimeConfig.LLM_MODEL || 'unknown';\n    const embeddingModel = runtimeConfig.EMBEDDING_MODEL || 'unknown';\n    const chunkSize = Number(runtimeConfig.CHUNK_SIZE || 0);\n    const chunkOverlap = Number(runtimeConfig.CHUNK_OVERLAP || 0);\n    const similarityTopK = Number(runtimeConfig.SIMILARITY_TOP_K || 0);\n\n    // Calculate step-level metrics\n    const stepMetrics = {};\n    let bottleneckStep = 'unknown';\n    let bottleneckTime = 0;\n    \n    for (const [step, time] of Object.entries(stepTimes)) {\n      if (Number(time) > bottleneckTime) {\n        bottleneckTime = Number(time);\n        bottleneckStep = step;\n      }\n      stepMetrics[step.replace(/[^a-zA-Z0-9_]/g, '_')] = Number(time);\n    }\n\n    // Calculate performance variance\n    const stepTimesArray = Object.values(stepTimes).map(Number);\n    const avgStepTime = stepTimesArray.reduce((a, b) => a + b, 0) / stepTimesArray.length || 0;\n    const variance = stepTimesArray.reduce((acc, time) => acc + Math.pow(time - avgStepTime, 2), 0) / stepTimesArray.length || 0;\n    const performanceVariance = Math.round((Math.sqrt(variance) / avgStepTime) * 100) || 0;\n\n    // Extract field-level confidence details\n    const fieldConfidenceDetails = confidenceAnalysis?.field_confidence_details || rawData?.field_confidence_details || {};\n    const fieldMetrics = {};\n    \n    for (const [fieldName, scores] of Object.entries(fieldConfidenceDetails)) {\n      if (Array.isArray(scores) && scores.length > 0) {\n        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;\n        const min = Math.min(...scores);\n        const max = Math.max(...scores);\n        const fieldKey = fieldName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();\n        \n        fieldMetrics[`field_${fieldKey}_avg_confidence`] = Math.round(avg * 100);\n        fieldMetrics[`field_${fieldKey}_min_confidence`] = Math.round(min * 100);\n        fieldMetrics[`field_${fieldKey}_max_confidence`] = Math.round(max * 100);\n        fieldMetrics[`field_${fieldKey}_score_count`] = scores.length;\n        fieldMetrics[`field_${fieldKey}_variance`] = Math.round(Math.sqrt(scores.reduce((acc, score) => acc + Math.pow(score - avg, 2), 0) / scores.length) * 100);\n      }\n    }\n\n    const modelTag = llmModel.toLowerCase().replace(/[^a-z0-9]/g, '-');\n    \n    const grafanaAnnotation = {\n      text: `🤖 RAG Analytics v3.0 by RamziRebai | ${alertSeverity} | Confidence: ${overallConfidence}% | Health: ${systemHealth.overall_health_score || 0}/100 | Satisfaction: ${userSatisfaction}% | Rating: ${healthRating} | Session: ${sessionId}`,\n      tags: [\n        'rag-system',\n        'ramzirebai',\n        'v3.0',\n        alertSeverity.toLowerCase(),\n        `health-${healthRating.toLowerCase()}`,\n        `confidence-${overallConfidence < 40 ? 'critical' : overallConfidence < 60 ? 'warning' : 'good'}`,\n        `satisfaction-${userSatisfaction < 70 ? 'poor' : userSatisfaction < 90 ? 'good' : 'excellent'}`,\n        `model-${modelTag}`,\n        `embedding-${embeddingModel.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,\n        `chunk-size-${chunkSize}`,\n        `top-k-${similarityTopK}`\n      ],\n      time: tsNow - (totalExecutionTime * 1000),\n      timeEnd: tsNow,\n      data: {\n        // Session & Identity\n        session_id: sessionId,\n        workflow_version: analytics.workflow_version || '3.0',\n        processed_by: analytics.processed_by || 'RamziRebai',\n        processing_timestamp: nowIso(),\n        \n        // Core Performance Metrics\n        total_execution_time_seconds: totalExecutionTime,\n        average_step_time: avgStepTime,\n        total_steps: totalSteps,\n        successful_steps: successfulSteps,\n        success_rate: successfulSteps / totalSteps || 0,\n        error_count: errorCount,\n        bottleneck_step: bottleneckStep,\n        bottleneck_time_seconds: bottleneckTime,\n        performance_variance_percent: performanceVariance,\n        \n        // Confidence Metrics\n        overall_confidence_percent: overallConfidence,\n        confidence_health_score: Math.round((confidenceAnalysis?.overall_average || 0) * 100),\n        fields_processed_total: fieldsProcessed,\n        fields_below_threshold: fieldsBelowThreshold,\n        confidence_threshold: threshold,\n        \n        // Field Performance Analysis\n        highest_confidence_field: confidenceAnalysis?.highest_confidence_field?.field || 'unknown',\n        highest_confidence_score: Math.round((confidenceAnalysis?.highest_confidence_field?.score || 0) * 100),\n        lowest_confidence_field: confidenceAnalysis?.lowest_confidence_field?.field || 'unknown',\n        lowest_confidence_score: Math.round((confidenceAnalysis?.lowest_confidence_field?.score || 0) * 100),\n        \n        // Feedback & User Interaction\n        feedback_iterations: feedbackIterations,\n        modification_rate_percent: modificationRate,\n        feedback_efficiency: 100 - modificationRate,\n        user_satisfaction_percent: userSatisfaction,\n        \n        // System Health\n        alert_severity: alertSeverity,\n        health_rating: healthRating,\n        overall_health_score: systemHealth.overall_health_score || 0,\n        critical_issues_count: criticalIssuesCount,\n        warnings_count: warningsCount,\n        \n        // Business Intelligence\n        system_efficiency_percent: systemEfficiency,\n        processing_quality_percent: processingQuality,\n        optimization_priority_count: businessIntel.optimization_priority_count || 0,\n        \n        // Runtime Configuration\n        llm_model: llmModel,\n        embedding_model: embeddingModel,\n        chunk_size: chunkSize,\n        chunk_overlap: chunkOverlap,\n        similarity_top_k: similarityTopK,\n        llm_temperature: Number(runtimeConfig.LLM_TEMPERATURE || 0),\n        embedding_dimension: Number(runtimeConfig.EMBEDDING_DIMENSION || 0),\n        max_retries: Number(runtimeConfig.MAX_RETRIES || 0),\n        \n        // Step-level Performance (for detailed analysis)\n        ...stepMetrics,\n        \n        // Field-level Confidence Analysis (for field performance dashboards)\n        ...fieldMetrics,\n        \n        // Additional Analytics\n        fields_processed_per_second: fieldsProcessed / (totalExecutionTime || 1),\n        processing_efficiency_score: Math.round((successfulSteps / totalSteps) * (1 - errorCount / totalSteps) * 100),\n        confidence_distribution_excellent: confidenceAnalysis?.scores_distribution?.excellent || 0,\n        confidence_distribution_good: confidenceAnalysis?.scores_distribution?.good || 0,\n        confidence_distribution_moderate: confidenceAnalysis?.scores_distribution?.moderate || 0,\n        confidence_distribution_poor: confidenceAnalysis?.scores_distribution?.poor || 0,\n        \n        // Resume & Application Context (if available)\n        input_resume_file: rawData?.input_files?.resume_file || 'unknown',\n        input_application_form: rawData?.input_files?.application_form || 'unknown',\n        \n        // Events & Monitoring\n        events_processed: rawData?.events_processed || 0,\n        low_confidence_events: (rawData?.event_log || []).filter(e => e.type === 'low_confidence_response').length\n      }\n    };\n\n    out.push({ json: grafanaAnnotation });\n  }\n\n  // If no outputs produced, return a neutral warning item\n  if (out.length === 0) {\n    return [{ json: { warning: 'No input items processed', time: Date.now(), data: {} } }];\n  }\n\n  return out;\n} catch (e) {\n  // Safety net: always return an array with error details\n  return [{ json: { error: 'grafana_integration_failed', message: e.message, stack: e.stack, time: Date.now() } }];\n}"
+      },
+      "id": "41d6ec84-ee88-4562-b8ce-37e1564aa8de",
+      "name": "Enhanced Grafana Integration v3.0",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Response v3.0 (hardened)\n// Always returns an array of items: [{ json: {...} }]\n// Maps over all incoming items and constructs a safe response per item.\n\nconst nowIso = () => new Date().toISOString();\nconst round = (n) => Math.round(Number(n) || 0);\n\ntry {\n  const items = $input.all() || [];\n  const out = [];\n\n  for (const it of items) {\n    const a = it?.json?.analytics;\n\n    if (!a || typeof a !== 'object') {\n      out.push({\n        json: {\n          status: 'ok',\n          message: 'No analytics data available',\n          timestamp: nowIso()\n        }\n      });\n      continue;\n    }\n\n    const response = {\n      status: 'success',\n      message: 'RAG analytics processed successfully',\n      timestamp: a.timestamp || nowIso(),\n      processed_by: a.processed_by || 'unknown',\n      workflow_version: a.workflow_version || '3.0',\n      session_id: a.session_id || `session_${Date.now()}`,\n      processing_duration_ms: a.processing_metadata?.duration_ms || 0,\n      analytics_summary: {\n        overall_confidence: round((a.confidence_metrics?.overall_confidence || 0) * 100),\n        confidence_health_score: a.confidence_metrics?.confidence_health_score || 0,\n        user_satisfaction: a.business_intelligence?.user_satisfaction_score || 0,\n        system_health_score: a.system_health?.overall_health_score || 0,\n        health_rating: a.business_intelligence?.health_rating || 'UNKNOWN',\n        execution_time: round(a.performance?.total_execution_time || 0),\n        feedback_iterations: a.feedback_metrics?.total_feedback_iterations || 0,\n        alert_level: a.system_health?.alert_severity || 'INFO',\n        fields_processed: a.confidence_metrics?.fields_processed || 0,\n        fields_below_threshold: a.confidence_metrics?.fields_below_threshold || 0\n      },\n      performance_insights: {\n        bottleneck_step: a.performance?.bottleneck_step || 'unknown',\n        bottleneck_time: round(a.performance?.bottleneck_time || 0),\n        performance_variance: a.performance?.performance_variance || 0,\n        optimization_needed: a.business_intelligence?.optimization_priority_count || 0\n      },\n      system_health: {\n        critical_issues: (a.system_health?.critical_issues || []).length,\n        warnings: (a.system_health?.warnings || []).length,\n        recommendations: (a.system_health?.recommendations || []).length\n      },\n      dashboards: {\n        main_analytics: 'https://grafana.example.com/d/rag-analytics',\n        field_performance: 'https://grafana.example.com/d/rag-fields',\n        system_health: 'https://grafana.example.com/d/rag-health'\n      },\n      next_actions: [\n        'Monitor confidence trends in Grafana dashboards',\n        `Review ${a.business_intelligence?.optimization_priority_count || 0} fields needing optimization`,\n        `Address ${(a.system_health?.critical_issues || []).length} critical issues`,\n        `Implement ${(a.system_health?.recommendations || []).length} system recommendations`\n      ]\n    };\n\n    out.push({ json: response });\n  }\n\n  // If nothing was emitted, return a neutral OK item\n  if (out.length === 0) {\n    return [{ json: { status: 'ok', message: 'No input items', timestamp: nowIso() } }];\n  }\n\n  return out;\n} catch (e) {\n  // Safety net: always return an array\n  return [{ json: { status: 'error', message: e.message, timestamp: nowIso() } }];\n}"
+      },
+      "id": "0d74fb96-cc04-41f5-b184-cc89690feb4c",
+      "name": "Build Response v3.0",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ab8698f3-da95-43c8-bb69-a244915dee8e",
+      "name": "Enhanced Response v3.0",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        208,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Robust Feedback Analytics Processor v3.2\n// Fixed version that handles data extraction properly\n// Author: Enhanced by Claude for RamziRebai\n\nconst nowIso = () => new Date().toISOString();\nconst asNumber = (v, d = 0) => {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : d;\n};\n\ntry {\n  const items = $input.all();\n  \n  if (!items || items.length === 0) {\n    console.log('No input items for feedback processing');\n    return [];\n  }\n\n  const out = [];\n\n  for (const it of items) {\n    const base = it && it.json ? it.json : {};\n    \n    // Extract feedback data from multiple possible sources\n    let feedbackIterations = [];\n    let feedbackAnalysis = null;\n    \n    try {\n      // Method 1: Direct from field_analytics (if passed through)\n      if (base.feedback_iterations && Array.isArray(base.feedback_iterations)) {\n        feedbackIterations = base.feedback_iterations;\n      }\n      \n      // Method 2: From raw_data_json if available\n      if ((!feedbackIterations || feedbackIterations.length === 0) && base.raw_data_json) {\n        const rawData = typeof base.raw_data_json === 'string' \n          ? JSON.parse(base.raw_data_json) \n          : base.raw_data_json;\n          \n        feedbackIterations = rawData.enhanced_monitoring_summary?.user_feedback_analysis?.feedback_iterations || \n                           rawData.feedback_iterations || [];\n        feedbackAnalysis = rawData.enhanced_monitoring_summary?.user_feedback_analysis || null;\n      }\n      \n      // Method 3: Check if this data was passed from the analytics engine\n      if ((!feedbackIterations || feedbackIterations.length === 0)) {\n        // Look for feedback data in the original structure\n        const enhancedSummary = base.enhanced_monitoring_summary;\n        if (enhancedSummary && enhancedSummary.user_feedback_analysis) {\n          feedbackIterations = enhancedSummary.user_feedback_analysis.feedback_iterations || [];\n          feedbackAnalysis = enhancedSummary.user_feedback_analysis;\n        }\n      }\n      \n    } catch (e) {\n      console.log('Error parsing feedback data:', e.message);\n    }\n\n    // Skip if no feedback iterations found\n    if (!Array.isArray(feedbackIterations) || feedbackIterations.length === 0) {\n      console.log('No feedback iterations found for session:', base.session_id);\n      continue;\n    }\n\n    const sessionId = base.session_id || `rag_${Date.now().toString(36)}`;\n    const baseTimestamp = base.timestamp || nowIso();\n    const llmModel = base.llm_model || 'unknown';\n    const embeddingModel = base.embedding_model || 'unknown';\n\n    console.log(`Processing ${feedbackIterations.length} feedback iterations for session: ${sessionId}`);\n\n    // Process each feedback iteration\n    feedbackIterations.forEach((iteration, index) => {\n      try {\n        const fieldsModified = iteration.fields_modified || [];\n        const feedbackDetails = iteration.feedback_details || [];\n        const iterationNumber = asNumber(iteration.iteration_number, index + 1);\n        \n        // Handle timestamp - could be Unix timestamp or ISO string\n        let iterationTimestamp;\n        if (iteration.timestamp) {\n          // If it's a number, assume Unix timestamp\n          if (typeof iteration.timestamp === 'number') {\n            iterationTimestamp = new Date(iteration.timestamp * 1000).toISOString();\n          } else {\n            iterationTimestamp = iteration.timestamp;\n          }\n        } else {\n          iterationTimestamp = baseTimestamp;\n        }\n        \n        // Calculate modification rate for this iteration\n        const totalFeedbackRequests = feedbackDetails.length;\n        const totalFieldsModified = fieldsModified.length;\n        const modificationRate = totalFeedbackRequests > 0 ? \n          totalFieldsModified / totalFeedbackRequests : 0;\n\n        const feedbackRecord = {\n          session_id: sessionId,\n          timestamp: iterationTimestamp,\n          iteration_number: iterationNumber,\n          fields_modified_count: totalFieldsModified,\n          fields_modified_list: fieldsModified, // PostgreSQL will handle array conversion\n          feedback_details: JSON.stringify(feedbackDetails),\n          modification_rate: Math.round(modificationRate * 10000) / 10000, // 4 decimal places\n          llm_model: llmModel,\n          embedding_model: embeddingModel\n        };\n\n        console.log(`Created feedback record for iteration ${iterationNumber}:`, {\n          session_id: sessionId,\n          fields_modified: totalFieldsModified,\n          feedback_requests: totalFeedbackRequests\n        });\n\n        out.push({ json: feedbackRecord });\n\n      } catch (e) {\n        console.log(`Error processing feedback iteration ${index}:`, e.message);\n        // Create error record for debugging\n        out.push({\n          json: {\n            session_id: sessionId,\n            timestamp: baseTimestamp,\n            iteration_number: index + 1,\n            fields_modified_count: 0,\n            fields_modified_list: [],\n            feedback_details: JSON.stringify([]),\n            modification_rate: 0,\n            llm_model: llmModel,\n            embedding_model: embeddingModel,\n            error_message: e.message,\n            error_iteration_data: JSON.stringify(iteration)\n          }\n        });\n      }\n    });\n  }\n\n  console.log(`Feedback processor completed. Generated ${out.length} records.`);\n  return out;\n  \n} catch (e) {\n  console.log('Critical error in feedback processor:', e.message);\n  return [{\n    json: {\n      error: 'FEEDBACK_PROCESSING_FAILED',\n      message: e.message,\n      timestamp: nowIso()\n    }\n  }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        -528
+      ],
+      "id": "120f1a06-0a7c-418d-815a-6b019dd43e13",
+      "name": "Process Feedback Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Fixed SQL Query for Store Feedback Analytics Node\n-- Simplified version that works with n8n templates\n\nINSERT INTO rag_analytics.feedback_analytics (\n  session_id, timestamp, iteration_number, fields_modified_count, \n  fields_modified_list, feedback_details, modification_rate,\n  llm_model, embedding_model, created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.timestamp }}',\n  {{ $json.iteration_number || 1 }},\n  {{ $json.fields_modified_count || 0 }},\n  string_to_array('{{ $json.fields_modified_list ? $json.fields_modified_list.join(\",\") : \"\" }}', ','),\n  ${{ $json.feedback_details || '[]' }}$::jsonb,\n  {{ $json.modification_rate || 0 }},\n  '{{ $json.llm_model || 'unknown' }}',\n  '{{ $json.embedding_model || 'unknown' }}',\n  NOW()\n)\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        160,
+        -624
+      ],
+      "id": "d76af8b7-f95f-479c-ac3f-a42ae0a87ce2",
+      "name": "Store Feedback Analytics",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- SQL Query for Store Confidence Scores Node\nINSERT INTO rag_analytics.confidence_scores (\n  session_id, timestamp, field_name, confidence_score, score_sequence,\n  llm_model, embedding_model, chunk_size, chunk_overlap, similarity_top_k, created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.timestamp }}', \n  '{{ $json.field_name }}',\n  {{ $json.confidence_score || 0 }},\n  {{ $json.score_sequence || 1 }},\n  '{{ $json.llm_model || \"unknown\" }}',\n  '{{ $json.embedding_model || \"unknown\" }}',\n  {{ $json.chunk_size || 0 }},\n  {{ $json.chunk_overlap || 0 }},\n  {{ $json.similarity_top_k || 0 }},\n  NOW()\n)\nRETURNING id;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        144,
+        -224
+      ],
+      "id": "c43b685e-abb9-43ff-9fff-15a7d158bd53",
+      "name": "Store Confidence Scores",
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\n// Filter configuration for n8n Filter node\n// Keep only items where record_type === 'field_analytics'\n\n// In n8n Filter node UI, set:\n// Condition: {{ $json.record_type }} equals \"field_analytics\"\n\n// Or use this in a Code node:\nconst items = $input.all();\nconst fieldAnalyticsOnly = items.filter(item => \n  item.json.record_type === 'field_analytics'\n);\n\nreturn fieldAnalyticsOnly;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -384
+      ],
+      "id": "00305d77-b7cd-4a76-a08c-d5de057e6077",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "// COMPLETE SOLUTION: Data Pass-Through Node\n// Place this node IMMEDIATELY AFTER \"Store Session Data - Execute Query\"\n// Name it: \"Merge DB Result with Original Data\"\n\nconst items = $input.all();\nconst outputs = [];\n\nfor (const item of items) {\n  // Current item is the minimal database response: {session_id, created_at}\n  const dbResult = item.json;\n  \n  // Access the ORIGINAL data from the RAG Analytics Engine\n  // This uses n8n's $() function to reference a previous node's output\n  const originalItems = $(\"RAG Analytics Engine v3.0\").all();\n  \n  if (!originalItems || originalItems.length === 0) {\n    console.error('ERROR: Cannot access RAG Analytics Engine output');\n    outputs.push({ \n      json: { \n        error: 'Missing original data',\n        db_result: dbResult\n      } \n    });\n    continue;\n  }\n  \n  // Get the original analytics data\n  const originalData = originalItems[0].json;\n  \n  // Create complete output with:\n  // 1. All original analytics data\n  // 2. Database confirmation\n  const completeData = {\n    // Spread all original fields\n    ...originalData,\n    \n    // Add database confirmation\n    database_stored: true,\n    db_session_id: dbResult.session_id,\n    db_created_at: dbResult.created_at,\n    db_operation_timestamp: new Date().toISOString(),\n    \n    // Keep database result for reference\n    sql_insert_result: dbResult\n  };\n  \n  outputs.push({ json: completeData });\n}\n\nreturn outputs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        -304
+      ],
+      "id": "84f552f4-6f58-4f11-857f-a901e64bbf5a",
+      "name": "Merge DB Result with Original Data"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "RAG Report Webhook": {
+      "main": [
+        [
+          {
+            "node": "RAG Analytics Engine v3.0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG Analytics Engine v3.0": {
+      "main": [
+        [
+          {
+            "node": "Store Session Data - Execute Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Field Data v3.0": {
+      "main": [
+        [
+          {
+            "node": "Store Confidence Scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Critical Alert Check": {
+      "main": [
+        [
+          {
+            "node": "Send Critical Alert v3.0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Response v3.0": {
+      "main": [
+        [
+          {
+            "node": "Enhanced Response v3.0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Feedback Data": {
+      "main": [
+        [
+          {
+            "node": "Store Feedback Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Session Data - Execute Query": {
+      "main": [
+        [
+          {
+            "node": "Merge DB Result with Original Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Field Analytics": {
+      "main": [
+        []
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Store Field Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Critical Alert v3.0": {
+      "main": [
+        []
+      ]
+    },
+    "Merge DB Result with Original Data": {
+      "main": [
+        [
+          {
+            "node": "Process Feedback Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Process Field Data v3.0",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Build Response v3.0",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enhanced Grafana Integration v3.0",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Critical Alert Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "c6b09fda-88fa-4339-9894-8e2db35001b9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "id": "qRR4JyBbArmYRTzF",
+  "tags": [
+    {
+      "updatedAt": "2025-09-03T17:59:30.094Z",
+      "createdAt": "2025-09-03T17:59:30.094Z",
+      "id": "OlNqJ845hKsVwf5h",
+      "name": "RAG Analytics v3.0"
+    },
+    {
+      "updatedAt": "2025-08-31T14:54:19.587Z",
+      "createdAt": "2025-08-31T14:54:19.587Z",
+      "id": "bl4ALkIRPac0So7l",
+      "name": "RAG Analytics"
+    }
+  ]
+}

@@ -1,0 +1,474 @@
+{
+  "enhanced_monitoring_summary": {
+    "total_execution_time": 86.5816261768341,
+    "success_rate": 1.0,
+    "total_steps": 16,
+    "successful_steps": 16,
+    "errors_count": 0,
+    "events_processed": 14,
+    "step_times": {
+      "setup_components": 2.5715808868408203,
+      "initialization_step": 17.307392358779907,
+      "form_parsing_step": 8.453720331192017,
+      "query_processing_Current Employer": 3.3134195804595947,
+      "query_processing_Technical Skills": 2.635040521621704,
+      "query_processing_Email": 8.245018482208252,
+      "query_processing_First Name": 10.346270084381104,
+      "query_processing_Last Name": 9.475340366363525,
+      "query_processing_Linkedin": 7.402878999710083,
+      "query_processing_Degree": 6.162320613861084,
+      "query_processing_Phone": 8.626198053359985,
+      "query_processing_Current Job Title": 5.130657911300659,
+      "query_processing_Graduation Date": 6.4192914962768555,
+      "query_processing_Project Portfolio": 8.695036888122559,
+      "query_processing_Do you have 5 years of experience in React?": 6.061350345611572,
+      "query_processing_Describe why you’re a good fit for this position": 11.147822856903076
+    },
+    "runtime_configuration": {
+      "LLM_MODEL": "gemini-2.5-flash",
+      "EMBEDDING_MODEL": "text-embedding-004",
+      "CHUNK_SIZE": 200,
+      "CHUNK_OVERLAP": 0,
+      "SIMILARITY_TOP_K": 7,
+      "LLM_TEMPERATURE": 0.0,
+      "MIN_CONFIDENCE_THRESHOLD": 0.6,
+      "EMBEDDING_DIMENSION": 768,
+      "PINECONE_INDEX_NAME": "resume-application-matcher",
+      "MAX_RETRIES": 3,
+      "TIMEOUT": null
+    },
+    "input_files": {
+      "resume_file": "uploads\\71f90374-35bf-4ee4-956c-7df9e6cb7faf\\resume_CV_Ramzi_Rebai.pdf",
+      "application_form": "uploads\\71f90374-35bf-4ee4-956c-7df9e6cb7faf\\form_fake_application_form.pdf"
+    },
+    "field_processing": {
+      "total_fields_count": 13,
+      "processed_fields_list": [
+        "First Name",
+        "Last Name",
+        "Email",
+        "Phone",
+        "Linkedin",
+        "Project Portfolio",
+        "Degree",
+        "Graduation Date",
+        "Current Job Title",
+        "Current Employer",
+        "Technical Skills",
+        "Describe why you’re a good fit for this position",
+        "Do you have 5 years of experience in React?"
+      ]
+    },
+    "user_feedback_analysis": {
+      "total_feedback_requests": 0,
+      "total_fields_modified": 0,
+      "feedback_iterations": [],
+      "modified_fields": []
+    },
+    "confidence_analysis": {
+      "overall_average": 0.4292055231162791,
+      "total_fields_processed": 13,
+      "field_averages": {
+        "Current Employer": {
+          "average": 0.5,
+          "min": 0.5,
+          "max": 0.5,
+          "count": 1
+        },
+        "Technical Skills": {
+          "average": 0.5,
+          "min": 0.5,
+          "max": 0.5,
+          "count": 1
+        },
+        "Email": {
+          "average": 0.5,
+          "min": 0.5,
+          "max": 0.5,
+          "count": 1
+        },
+        "First Name": {
+          "average": 0.427578108,
+          "min": 0.416869313,
+          "max": 0.450474,
+          "count": 4
+        },
+        "Last Name": {
+          "average": 0.379980333,
+          "min": 0.364153206,
+          "max": 0.393641114,
+          "count": 4
+        },
+        "Linkedin": {
+          "average": 0.41688253,
+          "min": 0.406464249,
+          "max": 0.427380025,
+          "count": 4
+        },
+        "Degree": {
+          "average": 0.3802812325,
+          "min": 0.351779521,
+          "max": 0.421004504,
+          "count": 4
+        },
+        "Phone": {
+          "average": 0.3309629335,
+          "min": 0.317937821,
+          "max": 0.350431949,
+          "count": 4
+        },
+        "Current Job Title": {
+          "average": 0.47831924275,
+          "min": 0.462915421,
+          "max": 0.490290344,
+          "count": 4
+        },
+        "Graduation Date": {
+          "average": 0.3778007925,
+          "min": 0.355994493,
+          "max": 0.405678779,
+          "count": 4
+        },
+        "Project Portfolio": {
+          "average": 0.45480763150000003,
+          "min": 0.422952354,
+          "max": 0.495072573,
+          "count": 4
+        },
+        "Do you have 5 years of experience in React?": {
+          "average": 0.5373879,
+          "min": 0.490340412,
+          "max": 0.574357867,
+          "count": 4
+        },
+        "Describe why you’re a good fit for this position": {
+          "average": 0.45495866975,
+          "min": 0.433290869,
+          "max": 0.46932742,
+          "count": 4
+        }
+      },
+      "highest_confidence_field": {
+        "field": "Do you have 5 years of experience in React?",
+        "score": 0.5373879
+      },
+      "lowest_confidence_field": {
+        "field": "Phone",
+        "score": 0.3309629335
+      },
+      "scores_distribution": {
+        "excellent": 0,
+        "good": 0,
+        "moderate": 29,
+        "poor": 14
+      }
+    }
+  },
+  "detailed_step_analysis": {
+    "setup_components": 2.5715808868408203,
+    "initialization_step": 17.307392358779907,
+    "form_parsing_step": 8.453720331192017,
+    "query_processing_Current Employer": 3.3134195804595947,
+    "query_processing_Technical Skills": 2.635040521621704,
+    "query_processing_Email": 8.245018482208252,
+    "query_processing_First Name": 10.346270084381104,
+    "query_processing_Last Name": 9.475340366363525,
+    "query_processing_Linkedin": 7.402878999710083,
+    "query_processing_Degree": 6.162320613861084,
+    "query_processing_Phone": 8.626198053359985,
+    "query_processing_Current Job Title": 5.130657911300659,
+    "query_processing_Graduation Date": 6.4192914962768555,
+    "query_processing_Project Portfolio": 8.695036888122559,
+    "query_processing_Do you have 5 years of experience in React?": 6.061350345611572,
+    "query_processing_Describe why you’re a good fit for this position": 11.147822856903076
+  },
+  "error_log": [],
+  "event_log": [
+    {
+      "type": "fields_extracted",
+      "data": {
+        "field_count": 13,
+        "parse_duration": 6.20328164100647,
+        "extraction_duration": 2.242863178253174
+      },
+      "timestamp": 1758382847.9478939
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Current Employer",
+        "average_confidence": 0.5,
+        "all_confidence_score": [
+          0.5
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.2212918
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Technical Skills",
+        "average_confidence": 0.5,
+        "all_confidence_score": [
+          0.5
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.2267685
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Email",
+        "average_confidence": 0.5,
+        "all_confidence_score": [
+          0.5
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.2310243
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "First Name",
+        "average_confidence": 0.427578108,
+        "all_confidence_score": [
+          0.450474,
+          0.422124743,
+          0.420844376,
+          0.416869313
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.3107722
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Last Name",
+        "average_confidence": 0.379980333,
+        "all_confidence_score": [
+          0.393641114,
+          0.393140972,
+          0.36898604,
+          0.364153206
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.6811254
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Linkedin",
+        "average_confidence": 0.41688253,
+        "all_confidence_score": [
+          0.427380025,
+          0.425334752,
+          0.408351094,
+          0.406464249
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382858.8884258
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Degree",
+        "average_confidence": 0.3802812325,
+        "all_confidence_score": [
+          0.421004504,
+          0.387538016,
+          0.360802889,
+          0.351779521
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382859.1379116
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Phone",
+        "average_confidence": 0.3309629335,
+        "all_confidence_score": [
+          0.350431949,
+          0.329761237,
+          0.325720727,
+          0.317937821
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382859.3089805
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Current Job Title",
+        "average_confidence": 0.47831924275,
+        "all_confidence_score": [
+          0.490290344,
+          0.480208129,
+          0.479863077,
+          0.462915421
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382859.4188387
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Graduation Date",
+        "average_confidence": 0.3778007925,
+        "all_confidence_score": [
+          0.405678779,
+          0.385359913,
+          0.364169985,
+          0.355994493
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382859.9974773
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Project Portfolio",
+        "average_confidence": 0.45480763150000003,
+        "all_confidence_score": [
+          0.495072573,
+          0.469320416,
+          0.431885183,
+          0.422952354
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382860.9066854
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Do you have 5 years of experience in React?",
+        "average_confidence": 0.5373879,
+        "all_confidence_score": [
+          0.574357867,
+          0.553098321,
+          0.531755,
+          0.490340412
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382862.928942
+    },
+    {
+      "type": "low_confidence_response",
+      "data": {
+        "field": "Describe why you’re a good fit for this position",
+        "average_confidence": 0.45495866975,
+        "all_confidence_score": [
+          0.46932742,
+          0.467784494,
+          0.449431896,
+          0.433290869
+        ],
+        "threshold": 0.6
+      },
+      "timestamp": 1758382867.387696
+    }
+  ],
+  "configuration_used": {
+    "LLM_MODEL": "gemini-2.5-flash",
+    "EMBEDDING_MODEL": "text-embedding-004",
+    "CHUNK_SIZE": 200,
+    "CHUNK_OVERLAP": 0,
+    "SIMILARITY_TOP_K": 7,
+    "LLM_TEMPERATURE": 0.0,
+    "MIN_CONFIDENCE_THRESHOLD": 0.6,
+    "EMBEDDING_DIMENSION": 768,
+    "PINECONE_INDEX_NAME": "resume-application-matcher",
+    "MAX_RETRIES": 3,
+    "TIMEOUT": null
+  },
+  "field_confidence_details": {
+    "Current Employer": [
+      0.5
+    ],
+    "Technical Skills": [
+      0.5
+    ],
+    "Email": [
+      0.5
+    ],
+    "First Name": [
+      0.450474,
+      0.422124743,
+      0.420844376,
+      0.416869313
+    ],
+    "Last Name": [
+      0.393641114,
+      0.393140972,
+      0.36898604,
+      0.364153206
+    ],
+    "Linkedin": [
+      0.427380025,
+      0.425334752,
+      0.408351094,
+      0.406464249
+    ],
+    "Degree": [
+      0.421004504,
+      0.387538016,
+      0.360802889,
+      0.351779521
+    ],
+    "Phone": [
+      0.350431949,
+      0.329761237,
+      0.325720727,
+      0.317937821
+    ],
+    "Current Job Title": [
+      0.490290344,
+      0.480208129,
+      0.479863077,
+      0.462915421
+    ],
+    "Graduation Date": [
+      0.405678779,
+      0.385359913,
+      0.364169985,
+      0.355994493
+    ],
+    "Project Portfolio": [
+      0.495072573,
+      0.469320416,
+      0.431885183,
+      0.422952354
+    ],
+    "Do you have 5 years of experience in React?": [
+      0.574357867,
+      0.553098321,
+      0.531755,
+      0.490340412
+    ],
+    "Describe why you’re a good fit for this position": [
+      0.46932742,
+      0.467784494,
+      0.449431896,
+      0.433290869
+    ]
+  },
+  "feedback_iterations": [],
+  "report_metadata": {
+    "report_version": "2.0_enhanced",
+    "generated_by": "Enhanced WorkflowMonitor",
+    "generation_timestamp": "2025-09-20T16:41:59.417917",
+    "total_data_points": 30
+  }
+}
