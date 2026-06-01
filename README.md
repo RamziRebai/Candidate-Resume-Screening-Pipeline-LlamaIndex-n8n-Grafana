@@ -17,18 +17,18 @@ Production-ready AI pipeline that parses resumes and application forms, matches 
 
 ```mermaid
 flowchart LR
-	UI[Frontend UI] --> API[FastAPI Backend]
-	API <--> WS[WebSocket Logs]
-	API --> WF[LlamaIndex Workflow Engine]
-	WF --> LP[Llama Cloud / LlamaParse]
-	WF --> VDB[Qdrant Vector Search]
-	WF --> LLM[LLM + Embeddings]
-	WF --> RPT[Report Generation (PDF)]
-	RPT -->|Optional| GDRIVE[Google Drive]
-	WF --> N8N[n8n Workflows]
-	N8N --> SLACK[Slack Notifications]
-	N8N --> PG[(Supabase PostgreSQL)]
-	PG --> GRAF[Grafana Dashboards]
+  UI[Frontend UI] --> API[FastAPI Backend]
+  API <--> WS[WebSocket Logs]
+  API --> WF[LlamaIndex Workflow Engine]
+  WF --> LP[Llama Cloud / LlamaParse]
+  WF --> VDB[Qdrant Vector Search]
+  WF --> LLM[LLM + Embeddings]
+  WF --> RPT[Report Generation (PDF)]
+  RPT -->|Optional| GDRIVE[Google Drive]
+  WF --> N8N[n8n Workflows]
+  N8N --> SLACK[Slack Notifications]
+  N8N --> PG[(Supabase PostgreSQL)]
+  PG --> GRAF[Grafana Dashboards]
 ```
 
 ## Key Components
