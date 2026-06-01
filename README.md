@@ -23,7 +23,7 @@ flowchart LR
   WF --> LP[Llama Cloud / LlamaParse]
   WF --> VDB[Qdrant Vector Search]
   WF --> LLM[LLM + Embeddings]
-  WF --> RPT[Report Generation (PDF)]
+  WF --> RPT[Report Generation - PDF]
   RPT -->|Optional| GDRIVE[Google Drive]
   WF --> N8N[n8n Workflows]
   N8N --> SLACK[Slack Notifications]
