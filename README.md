@@ -13,6 +13,12 @@ Production-ready AI pipeline that parses resumes and application forms, matches 
 - Persists workflow metrics and results to a Supabase-hosted PostgreSQL database
 - Powers Grafana dashboards on top of PostgreSQL for real-time and historical visibility
 
+
+
+Uploading Video_last.mp4…
+
+
+
 ## Architecture Overview
 
 ```mermaid
