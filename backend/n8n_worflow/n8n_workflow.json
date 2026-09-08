@@ -49,7 +49,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "id": "M2QcV4Is3e76kIrP",
           "name": "Postgres account 2"
         }
       }
@@ -83,7 +83,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "id": "M2QcV4Is3e76kIrP",
           "name": "Postgres account 2"
         }
       }
@@ -136,7 +136,7 @@
         "select": "channel",
         "channelId": {
           "__rl": true,
-          "value": "#your-alert-channel",
+          "value": "#ai_resume_matcher",
           "mode": "name"
         },
         "text": "=🚨 *CRITICAL RAG SYSTEM ALERT v3.2*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📋 *SESSION INFORMATION*\n• *Session ID:* `{{ $json.session_id }}`\n• *Timestamp:* {{ $json.timestamp }}\n• *Version:* {{ $json.workflow_version }}\n• *Alert Level:* *{{ $json.alert_severity }}*\n• *Database Stored:* ✅ {{ $json.db_created_at }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💚 *SYSTEM HEALTH SCORE: {{ $json.health_score }}/100*\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📊 *CONFIDENCE ANALYSIS*\n• *Overall Confidence:* {{ Math.round($json.overall_confidence * 100) }}% (Target: 60%+)\n• *Health Score:* {{ $json.confidence_health_score }}/100\n• *Fields Processed:* {{ $json.total_fields_processed }}\n\n🔴 *CRITICAL FIELDS* ({{ $json.field_analytics.filter(f => f.health_status === 'CRITICAL').length }})\n{{ $json.field_analytics.filter(f => f.health_status === 'CRITICAL').length > 0 ? $json.field_analytics.filter(f => f.health_status === 'CRITICAL').map(f => `   • *${f.field_name}:* ${Math.round(f.avg_confidence * 100)}% confidence`).join('\\n') : '   • None - All fields above critical threshold ✅' }}\n\n⚠️ *WARNING FIELDS* ({{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length }})\n{{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length > 0 ? $json.field_analytics.filter(f => f.health_status === 'WARNING').slice(0, 5).map(f => `   • ${f.field_name}: ${Math.round(f.avg_confidence * 100)}%`).join('\\n') : '   • None' }}\n{{ $json.field_analytics.filter(f => f.health_status === 'WARNING').length > 5 ? `   ... and ${$json.field_analytics.filter(f => f.health_status === 'WARNING').length - 5} more` : '' }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n⚡ *PERFORMANCE METRICS*\n• *Execution Time:* {{ Math.round($json.execution_time) }}s\n• *Bottleneck Step:* `{{ $json.bottleneck_step }}` ({{ Math.round($json.bottleneck_time) }}s)\n• *Performance Variance:* {{ $json.performance_variance }}%\n• *Success Rate:* {{ Math.round($json.success_rate * 100) }}%\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔧 *SYSTEM CONFIGURATION*\n• *LLM Model:* {{ $json.llm_model }}\n• *Embedding Model:* {{ $json.embedding_model }}\n• *Chunk Size:* {{ $json.chunk_size }} | *Overlap:* {{ $json.chunk_overlap }}\n• *Similarity Top-K:* {{ $json.similarity_top_k }}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📁 *PROCESSED FILES*\n• *Resume:* `{{ $json.resume_file.split('\\\\').pop() }}`\n• *Application Form:* `{{ $json.application_form.split('\\\\').pop() }}`\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🎯 *ACTION REQUIRED*\n{{ $json.alert_severity === 'CRITICAL' ? '⚠️ *IMMEDIATE ATTENTION NEEDED*' : '📌 Review and optimize as needed' }}\n• Review {{ $json.field_analytics.filter(f => f.needs_optimization).length }} fields needing optimization\n• Address low confidence scores in critical fields\n• Consider adjusting chunk size or similarity parameters\n• Monitor performance bottlenecks\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n_Processed by {{ $json.processed_by }} | Workflow v{{ $json.workflow_version }}_\n_Processing took {{ $json.processing_duration_ms }}ms",
@@ -150,10 +150,10 @@
         688,
         288
       ],
-      "webhookId": "YOUR_SLACK_WEBHOOK_ID",
+      "webhookId": "8b17f82e-7c0b-42a7-af3b-34ebd74a3749",
       "credentials": {
         "slackApi": {
-          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "id": "Pua4T8mh2RxvU5Cq",
           "name": "Slack account"
         }
       }
@@ -173,7 +173,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Build Response v3.0 (hardened)\n// Always returns an array of items: [{ json: {...} }]\n// Maps over all incoming items and constructs a safe response per item.\n\nconst nowIso = () => new Date().toISOString();\nconst round = (n) => Math.round(Number(n) || 0);\n\ntry {\n  const items = $input.all() || [];\n  const out = [];\n\n  for (const it of items) {\n    const a = it?.json?.analytics;\n\n    if (!a || typeof a !== 'object') {\n      out.push({\n        json: {\n          status: 'ok',\n          message: 'No analytics data available',\n          timestamp: nowIso()\n        }\n      });\n      continue;\n    }\n\n    const response = {\n      status: 'success',\n      message: 'RAG analytics processed successfully',\n      timestamp: a.timestamp || nowIso(),\n      processed_by: a.processed_by || 'unknown',\n      workflow_version: a.workflow_version || '3.0',\n      session_id: a.session_id || `session_${Date.now()}`,\n      processing_duration_ms: a.processing_metadata?.duration_ms || 0,\n      analytics_summary: {\n        overall_confidence: round((a.confidence_metrics?.overall_confidence || 0) * 100),\n        confidence_health_score: a.confidence_metrics?.confidence_health_score || 0,\n        user_satisfaction: a.business_intelligence?.user_satisfaction_score || 0,\n        system_health_score: a.system_health?.overall_health_score || 0,\n        health_rating: a.business_intelligence?.health_rating || 'UNKNOWN',\n        execution_time: round(a.performance?.total_execution_time || 0),\n        feedback_iterations: a.feedback_metrics?.total_feedback_iterations || 0,\n        alert_level: a.system_health?.alert_severity || 'INFO',\n        fields_processed: a.confidence_metrics?.fields_processed || 0,\n        fields_below_threshold: a.confidence_metrics?.fields_below_threshold || 0\n      },\n      performance_insights: {\n        bottleneck_step: a.performance?.bottleneck_step || 'unknown',\n        bottleneck_time: round(a.performance?.bottleneck_time || 0),\n        performance_variance: a.performance?.performance_variance || 0,\n        optimization_needed: a.business_intelligence?.optimization_priority_count || 0\n      },\n      system_health: {\n        critical_issues: (a.system_health?.critical_issues || []).length,\n        warnings: (a.system_health?.warnings || []).length,\n        recommendations: (a.system_health?.recommendations || []).length\n      },\n      dashboards: {\n        main_analytics: 'https://grafana.example.com/d/rag-analytics',\n        field_performance: 'https://grafana.example.com/d/rag-fields',\n        system_health: 'https://grafana.example.com/d/rag-health'\n      },\n      next_actions: [\n        'Monitor confidence trends in Grafana dashboards',\n        `Review ${a.business_intelligence?.optimization_priority_count || 0} fields needing optimization`,\n        `Address ${(a.system_health?.critical_issues || []).length} critical issues`,\n        `Implement ${(a.system_health?.recommendations || []).length} system recommendations`\n      ]\n    };\n\n    out.push({ json: response });\n  }\n\n  // If nothing was emitted, return a neutral OK item\n  if (out.length === 0) {\n    return [{ json: { status: 'ok', message: 'No input items', timestamp: nowIso() } }];\n  }\n\n  return out;\n} catch (e) {\n  // Safety net: always return an array\n  return [{ json: { status: 'error', message: e.message, timestamp: nowIso() } }];\n}"
+        "jsCode": "// Build Response v3.0 (hardened)\n// Always returns an array of items: [{ json: {...} }]\n// Maps over all incoming items and constructs a safe response per item.\n\nconst nowIso = () => new Date().toISOString();\nconst round = (n) => Math.round(Number(n) || 0);\n\ntry {\n  const items = $input.all() || [];\n  const out = [];\n\n  for (const it of items) {\n    const a = it?.json?.analytics;\n\n    if (!a || typeof a !== 'object') {\n      out.push({\n        json: {\n          status: 'ok',\n          message: 'No analytics data available',\n          timestamp: nowIso()\n        }\n      });\n      continue;\n    }\n\n    const response = {\n      status: 'success',\n      message: 'RAG analytics processed successfully',\n      timestamp: a.timestamp || nowIso(),\n      processed_by: a.processed_by || 'unknown',\n      workflow_version: a.workflow_version || '3.0',\n      session_id: a.session_id || `session_${Date.now()}`,\n      processing_duration_ms: a.processing_metadata?.duration_ms || 0,\n      analytics_summary: {\n        overall_confidence: round((a.confidence_metrics?.overall_confidence || 0) * 100),\n        confidence_health_score: a.confidence_metrics?.confidence_health_score || 0,\n        user_satisfaction: a.business_intelligence?.user_satisfaction_score || 0,\n        system_health_score: a.system_health?.overall_health_score || 0,\n        health_rating: a.business_intelligence?.health_rating || 'UNKNOWN',\n        execution_time: round(a.performance?.total_execution_time || 0),\n        feedback_iterations: a.feedback_metrics?.total_feedback_iterations || 0,\n        alert_level: a.system_health?.alert_severity || 'INFO',\n        fields_processed: a.confidence_metrics?.fields_processed || 0,\n        fields_below_threshold: a.confidence_metrics?.fields_below_threshold || 0\n      },\n      performance_insights: {\n        bottleneck_step: a.performance?.bottleneck_step || 'unknown',\n        bottleneck_time: round(a.performance?.bottleneck_time || 0),\n        performance_variance: a.performance?.performance_variance || 0,\n        optimization_needed: a.business_intelligence?.optimization_priority_count || 0\n      },\n      system_health: {\n        critical_issues: (a.system_health?.critical_issues || []).length,\n        warnings: (a.system_health?.warnings || []).length,\n        recommendations: (a.system_health?.recommendations || []).length\n      },\n      dashboards: {\n        main_analytics: 'http://grafana:3000/d/rag-analytics',\n        field_performance: 'http://grafana:3000/d/rag-fields',\n        system_health: 'http://grafana:3000/d/rag-health'\n      },\n      next_actions: [\n        'Monitor confidence trends in Grafana dashboards',\n        `Review ${a.business_intelligence?.optimization_priority_count || 0} fields needing optimization`,\n        `Address ${(a.system_health?.critical_issues || []).length} critical issues`,\n        `Implement ${(a.system_health?.recommendations || []).length} system recommendations`\n      ]\n    };\n\n    out.push({ json: response });\n  }\n\n  // If nothing was emitted, return a neutral OK item\n  if (out.length === 0) {\n    return [{ json: { status: 'ok', message: 'No input items', timestamp: nowIso() } }];\n  }\n\n  return out;\n} catch (e) {\n  // Safety net: always return an array\n  return [{ json: { status: 'error', message: e.message, timestamp: nowIso() } }];\n}"
       },
       "id": "0d74fb96-cc04-41f5-b184-cc89690feb4c",
       "name": "Build Response v3.0",
@@ -215,8 +215,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Fixed SQL Query for Store Feedback Analytics Node\n-- Simplified version that works with n8n templates\n\nINSERT INTO rag_analytics.feedback_analytics (\n  session_id, timestamp, iteration_number, fields_modified_count, \n  fields_modified_list, feedback_details, modification_rate,\n  llm_model, embedding_model, created_at\n) VALUES (\n  '{{ $json.session_id }}',\n  '{{ $json.timestamp }}',\n  {{ $json.iteration_number || 1 }},\n  {{ $json.fields_modified_count || 0 }},\n  string_to_array('{{ $json.fields_modified_list ? $json.fields_modified_list.join(\",\") : \"\" }}', ','),\n  ${{ $json.feedback_details || '[]' }}$::jsonb,\n  {{ $json.modification_rate || 0 }},\n  '{{ $json.llm_model || 'unknown' }}',\n  '{{ $json.embedding_model || 'unknown' }}',\n  NOW()\n)\nRETURNING id;",
-        "options": {}
+        "query": "-- Fixed SQL Query for Store Feedback Analytics Node\n-- Simplified version that works with n8n templates\nINSERT INTO rag_analytics.feedback_analytics (\n  session_id, \"timestamp\", iteration_number, fields_modified_count,\n  fields_modified_list, feedback_details, modification_rate,\n  llm_model, embedding_model, created_at\n) VALUES (\n  $1, $2::timestamptz, $3, $4,\n  ARRAY(SELECT jsonb_array_elements_text($5::jsonb)),\n  $6::jsonb, $7, $8, $9, NOW()\n)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $json.session_id }}, {{ $json.timestamp }}, {{ $json.iteration_number || 1 }}, {{ $json.fields_modified_count || 0 }}, {{ $json.fields_modified_list || [] }}, {{ $json.feedback_details || '[]' }}, {{ $json.modification_rate || 0 }}, {{ $json.llm_model || 'unknown' }}, {{ $json.embedding_model || 'unknown' }}"
+        }
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
@@ -228,7 +230,7 @@
       "name": "Store Feedback Analytics",
       "credentials": {
         "postgres": {
-          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "id": "M2QcV4Is3e76kIrP",
           "name": "Postgres account 2"
         }
       }
@@ -249,7 +251,7 @@
       "name": "Store Confidence Scores",
       "credentials": {
         "postgres": {
-          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "id": "M2QcV4Is3e76kIrP",
           "name": "Postgres account 2"
         }
       }
@@ -423,10 +425,10 @@
     "executionOrder": "v1",
     "callerPolicy": "workflowsFromSameOwner"
   },
-  "versionId": "c6b09fda-88fa-4339-9894-8e2db35001b9",
+  "versionId": "e46ccda2-a6fb-4f33-81a2-b4bc8ecc825a",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "YOUR_INSTANCE_ID"
+    "instanceId": "155ab3bb7b87d8aabe5a5a74645085527eb076795f54fe61da1f9c451a55ff31"
   },
   "id": "qRR4JyBbArmYRTzF",
   "tags": [

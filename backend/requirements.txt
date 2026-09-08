@@ -17,7 +17,10 @@ typing-extensions==4.15.0
 httpx==0.28.1
 
 # PDF generation and Google Drive upload dependencies
+# playwright is the high-fidelity path (requires 'playwright install chromium').
+# xhtml2pdf is the pure-Python fallback used when Chromium isn't installed.
 playwright==1.56.0
+xhtml2pdf==0.2.17
 google-auth==2.40.3
 google-auth-oauthlib==1.2.3
 google-auth-httplib2==0.2.1

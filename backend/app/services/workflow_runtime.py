@@ -1,12 +1,10 @@
+#<workflow_runtime.py>
 import asyncio
-import json
 import logging
 import os
 import re
-import subprocess
 import sys
-import tempfile
-import traceback
+
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Union, Optional
@@ -68,51 +66,60 @@ async def execute_workflow(session_id: str):
 
         session_manager.add_log(session_id, "info", "Processing workflow events...")
 
-        found_input_event = False
+        # NOTE: A WorkflowHandler's event stream can only be consumed ONCE per run.
+        # This single loop is the sole consumer for the whole lifecycle, including
+        # any human-in-the-loop rounds. When the workflow pauses on an
+        # InputRequiredEvent, this loop stays suspended (the background task stays
+        # alive); process_feedback() only injects a HumanResponseEvent into the same
+        # run, which resumes this loop. It must never call stream_events() again.
+        last_review_fields: List[Dict[str, Any]] = []
         async for ev in workflow_handler.stream_events():
             logger.info(f"Workflow event received: {type(ev).__name__}")
 
             if isinstance(ev, LogEvent):
                 session_manager.add_log(session_id, "info", ev.log)
             elif isinstance(ev, InputRequiredEvent):
-                found_input_event = True
-                parsed_fields = parse_workflow_results(ev.result)
+                last_review_fields = parse_workflow_results(ev.result)
                 session["results"] = {
                     "session_id": session_id,
                     "status": "awaiting_review",
-                    "fields": parsed_fields,
+                    "fields": last_review_fields,
                 }
                 session_manager.update_session_status(session_id, "awaiting_review")
                 session_manager.add_log(session_id, "info", "Waiting for human feedback")
 
-        if not found_input_event:
-            session_manager.add_log(session_id, "info", "No human input required, completing workflow...")
-            result = await workflow_handler
+        # The stream is exhausted only once the workflow reaches its StopEvent.
+        session_manager.add_log(session_id, "info", "Finalizing workflow results...")
+        result = await workflow_handler
 
-            if isinstance(result, str):
-                fields = parse_workflow_results(result)
-            elif isinstance(result, list):
-                fields = parse_workflow_results(result)
-            else:
-                fields = []
+        if last_review_fields:
+            fields = last_review_fields
+        else:
+            fields = parse_workflow_results(result)
 
-            session["results"] = {
-                "session_id": session_id,
-                "status": "completed",
-                "fields": fields,
-            }
-            session_manager.update_session_status(session_id, "completed")
-            session_manager.add_log(session_id, "info", "Workflow completed successfully")
+        logger.info(f"PDF fields resolved: {len(fields)} fields -> {[f['name'] for f in fields]}")        # The StopEvent result is a summary string that doesn't carry structured
+        # fields; fall back to the last reviewed (and approved) fields.
+        if not fields and last_review_fields:
+            fields = last_review_fields
 
-            try:
-                await generate_and_upload_pdf(session_id, fields)
-            except Exception as pdf_err:
-                session_manager.add_log(session_id, "warning", f"PDF generation skipped: {pdf_err}")
+        session["results"] = {
+            "session_id": session_id,
+            "status": "completed",
+            "fields": fields,
+        }
+        session_manager.update_session_status(session_id, "completed")
+        session_manager.add_log(session_id, "info", "Workflow completed successfully")
 
-            try:
-                await workflow.finalize_workflow(session_id)
-            except Exception as finalize_err:
-                session_manager.add_log(session_id, "warning", f"Finalize workflow warning: {finalize_err}")
+        try:
+            logger.info(f"PDF fields resolved: {[f['name'] for f in fields]}")
+            await generate_and_upload_pdf(session_id, fields)
+        except Exception as pdf_err:
+            session_manager.add_log(session_id, "warning", f"PDF generation skipped: {pdf_err}")
+
+        try:
+            await workflow.finalize_workflow(session_id)
+        except Exception as finalize_err:
+            session_manager.add_log(session_id, "warning", f"Finalize workflow warning: {finalize_err}")
 
     except Exception as e:
         logger.error(f"Workflow execution failed for session {session_id}: {e}")
@@ -139,45 +146,14 @@ async def process_feedback(session_id: str, feedbacks: List[UserFeedback]):
             feedback_lines = [f"- {f.field}: {f.feedback}" for f in feedbacks]
             feedback_text = "Please update the following fields:\n" + "\n".join(feedback_lines)
 
+        # Inject the human response into the SAME running workflow. The stream is
+        # already owned by execute_workflow()'s loop, which will resume and process
+        # the subsequent events (further review rounds or completion). We must NOT
+        # call stream_events() here - it can only be consumed once per run, and
+        # doing so raises "Event stream already consumed".
         workflow_handler.ctx.send_event(HumanResponseEvent(response=feedback_text))
         session_manager.add_log(session_id, "info", "Feedback sent to workflow")
-
-        found_input_event = False
-        async for ev in workflow_handler.stream_events():
-            if isinstance(ev, LogEvent):
-                session_manager.add_log(session_id, "info", ev.log)
-            elif isinstance(ev, InputRequiredEvent):
-                found_input_event = True
-                parsed_fields = parse_workflow_results(ev.result)
-                session["results"] = {
-                    "session_id": session_id,
-                    "status": "awaiting_review",
-                    "fields": parsed_fields,
-                }
-                session_manager.update_session_status(session_id, "awaiting_review")
-                break
-
-        if not found_input_event:
-            final_result = await workflow_handler
-            fields = parse_workflow_results(final_result)
-            session["results"] = {
-                "session_id": session_id,
-                "status": "completed",
-                "fields": fields,
-            }
-            session_manager.update_session_status(session_id, "completed")
-            session_manager.add_log(session_id, "info", "Feedback processing completed successfully")
-
-            try:
-                await generate_and_upload_pdf(session_id, fields)
-            except Exception as pdf_err:
-                session_manager.add_log(session_id, "warning", f"PDF generation skipped: {pdf_err}")
-
-            if "workflow" in session and session["workflow"]:
-                try:
-                    await session["workflow"].finalize_workflow(session_id)
-                except Exception as finalize_err:
-                    session_manager.add_log(session_id, "warning", f"Finalize workflow warning: {finalize_err}")
+        session_manager.update_session_status(session_id, "processing")
 
     except Exception as e:
         logger.error(f"Feedback processing failed: {e}")
@@ -330,7 +306,6 @@ def get_confidence_score(confidence: str) -> float:
 GOOGLE_DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.file']
 GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID', None)  # Optional: Set in .env
 
-GOOGLE_DRIVE_FOLDER_ID="1kBWvKYhsW54sQTaUKAY8AWyxPOJYapKL"
 # HTML template for PDF
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -653,12 +628,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+def _normalize_field_name(name: str) -> str:
+    """Normalize a field name for lookup, tolerant of quote/whitespace variants.
+
+    Field names are extracted by an LLM from the uploaded application form, so
+    the exact characters (e.g. a typographic apostrophe like "'" instead of a
+    plain "'") can vary between runs even for the "same" question.
+    """
+    normalized = name.replace('’', "'").replace('‘', "'")
+    return re.sub(r'\s+', ' ', normalized).strip().lower()
+
+
 def transform_resume_data(input_data: List[Dict[str, Any]]) -> Dict[str, str]:
     """Transform resume extraction data from list format to dictionary format."""
     lookup = {item['name']: item['response'] for item in input_data}
-    
+    normalized_lookup = {_normalize_field_name(k): v for k, v in lookup.items()}
+
     def get_value(key: str, default: str = "Not Available") -> str:
-        response = lookup.get(key, default)
+        response = lookup.get(key)
+        if response is None:
+            response = normalized_lookup.get(_normalize_field_name(key), default)
         if "not available" in response.lower() or "this information is not available" in response.lower():
             return default
         return response
@@ -716,6 +705,10 @@ async def generate_pdf_from_data(data: List[Dict[str, Any]], output_path: str) -
             logger.warning(f"Playwright PDF failed, falling back to xhtml2pdf: {pw_err}")
 
     # ---- Attempt 2: xhtml2pdf (pure-Python fallback) --------------------
+    # This path runs whenever Playwright's Chromium is unavailable OR the
+    # Playwright attempt raised. Without it, this function would return None and
+    # no PDF file would ever be written (breaking the Google Drive upload).
+    return await _generate_pdf_xhtml2pdf(processed_html, output_path)
 
 
 async def _generate_pdf_playwright(html: str, output_path: str) -> str:
@@ -926,13 +919,26 @@ async def generate_and_upload_pdf(session_id: str, fields_data: List[Dict[str, A
         
         # Generate PDF
         session_manager.add_log(session_id, "info", f"📄 Generating PDF: {pdf_filename}")
+        logger.info(f"📄 Generating PDF for session {session_id}: {pdf_filename}")
         await generate_pdf_from_data(fields_data, str(pdf_path))
+
+        # Verify the file was actually written. generate_pdf_from_data can silently
+        # produce nothing if every backend failed, so guard against uploading a
+        # non-existent file (which would fail with an opaque FileNotFoundError).
+        if not pdf_path.exists() or pdf_path.stat().st_size == 0:
+            raise RuntimeError(
+                f"PDF was not created at {pdf_path}. Ensure Playwright Chromium is "
+                f"installed ('playwright install chromium') or that xhtml2pdf is available."
+            )
+
         result['pdf_generated'] = True
         result['pdf_path'] = str(pdf_path)
         session_manager.add_log(session_id, "info", f"✅ PDF generated successfully: {pdf_path.name}")
+        logger.info(f"✅ PDF generated: {pdf_path} ({pdf_path.stat().st_size / 1024:.1f} KB)")
         
         # Upload to Google Drive
         session_manager.add_log(session_id, "info", "☁️  Uploading PDF to Google Drive...")
+        logger.info(f"☁️  Uploading PDF to Google Drive: {pdf_path.name}")
         drive_info = await upload_pdf_to_google_drive(str(pdf_path), GOOGLE_DRIVE_FOLDER_ID)
         
         if drive_info:
@@ -942,10 +948,15 @@ async def generate_and_upload_pdf(session_id: str, fields_data: List[Dict[str, A
                 session_id, "info", 
                 f"✅ PDF uploaded to Google Drive: {drive_info['web_view_link']}"
             )
+            logger.info(f"✅ PDF uploaded to Google Drive: {drive_info['web_view_link']}")
         else:
             session_manager.add_log(
                 session_id, "warning", 
-                "⚠️  Google Drive upload skipped (credentials not configured)"
+                "⚠️  Google Drive upload skipped (credentials not configured or upload failed)"
+            )
+            logger.warning(
+                "⚠️  Google Drive upload skipped for session "
+                f"{session_id} (credentials not configured or upload failed)"
             )
     
     except Exception as e:
@@ -962,5 +973,4 @@ async def generate_and_upload_pdf(session_id: str, fields_data: List[Dict[str, A
     
     return result
 
-
-
+#</workflow_runtime.py>

@@ -16,29 +16,25 @@ class WorkflowConfig:
     embed_azure_endpoint = os.getenv("AZURE_EMBED_ENDPOINT", "")
     embed_api_key = os.getenv("AZURE_EMBED_API_KEY", "")
     # Model configurations
-    LLM_MODEL = "gpt-4.1"  # Using more cost-effective model
+    LLM_MODEL = "gpt-5.4-mini"  # Using more cost-effective model
     EMBEDDING_MODEL = "text-embedding-3-small"
     EMBEDDING_DIMENSION = 1536
-
-    # LLM_MODEL="gemini-2.5-flash"
-    # EMBEDDING_MODEL = "text-embedding-004"
-    # EMBEDDING_DIMENSION = 768
     
     # Vector store settings
     # PINECONE_INDEX_NAME = "resume-application-matcher"
     # PINECONE_CLOUD = "aws"
     # PINECONE_REGION = "us-east-1"
-    QDRANT_INDEX_NAME = "resume-application-matcher"
+    QDRANT_INDEX_NAME = "resume-application-matcher-new"
 
     
     # Processing parameters
-    CHUNK_SIZE = 20
+    CHUNK_SIZE = 200
     CHUNK_OVERLAP = 0
-    SIMILARITY_TOP_K = 3
+    SIMILARITY_TOP_K = 10
     LLM_TEMPERATURE = 0.0
     TIMEOUT = None
     MAX_RETRIES = 3
-    MIN_CONFIDENCE_THRESHOLD = 0.5
+    MIN_CONFIDENCE_THRESHOLD = 0.4
 
 class EnhancedWorkflowConfig:
     """Enhanced configuration with profile support"""
@@ -81,12 +77,12 @@ class EnhancedWorkflowConfig:
             "EMBEDDING_MODEL": "text-embedding-3-small",
             "EMBEDDING_DIMENSION": 1536,
             # "PINECONE_INDEX_NAME": "resume-application-matcher",
-            "QDRANT_INDEX_NAME": "resume-application-matcher",
+            "QDRANT_INDEX_NAME": "resume-application-matcher-new",
             # "PINECONE_CLOUD": "aws",
             # "PINECONE_REGION": "us-east-1",
             "CHUNK_SIZE": 20,
             "CHUNK_OVERLAP": 0,
-            "SIMILARITY_TOP_K": 3,
+            "SIMILARITY_TOP_K": 10,
             "LLM_TEMPERATURE": 0.0,
             "MAX_RETRIES": 3,
             "TIMEOUT": None,
@@ -106,10 +102,9 @@ class EnhancedWorkflowConfig:
             self.EMBEDDING_DIMENSION = 3072
         elif 'text-embedding-3-small' in embedding_model:
             self.EMBEDDING_DIMENSION = 1536
-        elif 'text-embedding-ada' in embedding_model:
-            self.EMBEDDING_DIMENSION = 1536
+
         # Google embedding dimensions
-        elif 'text-embedding-004' in embedding_model or 'text-embedding-005' in embedding_model:
+        elif 'gemini-embedding-001' in embedding_model:
             self.EMBEDDING_DIMENSION = 768
         # Default fallback
         else:

@@ -55,7 +55,7 @@ async def send_test_report():
                     'finalization_step': 1.4
                 },
                 'runtime_configuration': {
-                    'LLM_MODEL': 'gpt-4o-mini',
+                    'LLM_MODEL': 'gpt-5.4-mini',
                     'EMBEDDING_MODEL': 'text-embedding-3-small',
                     'CHUNK_SIZE': 200,
                     'SIMILARITY_TOP_K': 7,

@@ -90,17 +90,16 @@ const ConfigPanel: React.FC<{
           title={tooltips.llm_model}
         >
           <optgroup label="Google Gemini Models">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast & Latest)</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash (Balanced)</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro (Most Capable)</option>
+            <option value="gemini-3.5-flash">Gemini 3.5 Flash (Fast & Latest)</option>
+            <option value="gemini-3.5-flash-lite">Gemini 3.0 Flash Lite (Fatest, less capable)</option>
           </optgroup>
           <optgroup label="OpenAI Models">
-            <option value="gpt-4.1">GPT-4.1 (High Performance)</option>
-            <option value="gpt-4.1-mini">GPT-4.1-mini Turbo (Fast & Economical)</option>
+            <option value="gpt-5.4">GPT-5.4 (High Performance)</option>
+            <option value="gpt-5.4-mini">GPT-5.4-mini (Fast & Economical)</option>
           </optgroup>
           <optgroup label="Advanced Models">
-            <option value="o1-preview">o1 Preview (Reasoning)</option>
-            <option value="o1-mini">o1 Mini (Efficient Reasoning)</option>
+            <option value="gpt-5.6">GPT 5.6 (Reasoning)</option>
+            <option value="claude-opus-4-8">Claude Opus 4.8 (Efficient)</option>
           </optgroup>
         </select>
       </div>
@@ -116,8 +115,7 @@ const ConfigPanel: React.FC<{
           title={tooltips.embedding_model}
         >
           <optgroup label="Google Embeddings">
-            <option value="text-embedding-004">Text Embedding 004 (768 dim, Latest)</option>
-            <option value="text-embedding-005">Text Embedding 005 (768 dim, Enhanced)</option>
+            <option value="gemini-embedding-001">Gemini Embedding 001 (768 dim, Latest)</option>
           </optgroup>
           <optgroup label="OpenAI Embeddings">
             <option value="text-embedding-3-large">Text Embedding 3 Large (3072 dim, Most Capable)</option>
@@ -576,8 +574,8 @@ const ResumeMatchingApp = () => {
   
   // Configuration state
   const [config, setConfig] = useState({
-    llm_model: 'gemini-2.5-flash',
-    embedding_model: 'text-embedding-004',
+    llm_model: 'gemini-3.5-flash',
+    embedding_model: 'gemini-embedding-001',
     qdrant_index_name: 'resume-application-matcher',
     chunk_size: 200,
     chunk_overlap: 0,
@@ -1087,9 +1085,15 @@ const ResumeMatchingApp = () => {
         });
         
         if (!response.ok) throw new Error('Failed to submit approval');
-        
-        setCurrentStep('completed');
-        setIsProcessing(false);
+
+        // Don't optimistically jump to 'completed'. The backend still has to
+        // finalize: run the workflow to StopEvent, generate the PDF, and upload
+        // it to Google Drive. Poll until the backend reports 'completed' so the
+        // UI reflects the real result (and the Drive upload actually happens).
+        setCurrentStep('processing');
+        if (sessionId) {
+          pollForResults(sessionId);
+        }
       } else {
         // Submit feedback for modifications
         if (!feedback.trim() || selectedFields.length === 0) {

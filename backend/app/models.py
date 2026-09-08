@@ -2,9 +2,9 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 class WorkflowConfigRequest(BaseModel):
     """Configuration parameters for the workflow"""
-    llm_model: str = Field(default="gpt-4o-mini", description="LLM model to use (gpt-4o, gpt-4o-mini, gpt-4-turbo)")
+    llm_model: str = Field(default="gpt-5.4-mini", description="LLM model to use")
     embedding_model: str = Field(default="text-embedding-3-small", description="Embedding model to use. Larger models better capture nuances.")
-    qdrant_index_name: str = Field(default="resume-application-matcher", description="Name of the Qdrant vector database collection")
+    qdrant_index_name: str = Field(default="resume-application-matcher-new", description="Name of the Qdrant vector database collection")
     chunk_size: int = Field(default=200, ge=50, description="Size of text chunks for processing (minimum 50)")
     chunk_overlap: int = Field(default=0, ge=0, description="Overlap between chunks (minimum 0)")
     similarity_top_k: int = Field(default=7, ge=1, le=20, description="Number of similar chunks to retrieve")

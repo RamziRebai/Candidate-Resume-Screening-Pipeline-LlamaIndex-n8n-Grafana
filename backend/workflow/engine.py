@@ -1,8 +1,10 @@
+#<engine.py>
 import os
 import logging
 import time
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import asyncio
 
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
@@ -113,58 +115,45 @@ class IntelligentResumeMatchingWorkflow(Workflow):
                     temperature=self.config.LLM_TEMPERATURE
                 )
                 logger.info("✅ Using Google Gemini LLM")
-            elif 'gpt' in llm_model or 'o1' in llm_model or 'o3' in llm_model or 'o4' in llm_model:
-                # OpenAI models (including GPT-4, GPT-3.5, o1, o3, o4 series)
-                if hasattr(self.config, 'api_key') and hasattr(self.config, 'azure_endpoint'):
-                    # Azure OpenAI
-                    os.environ["api_key"] = self.config.api_key
-                    os.environ["azure_endpoint"] = self.config.azure_endpoint
-                    
-                    # o1, o3, and o4 reasoning models don't support temperature parameter
-                    is_reasoning_model = any(x in llm_model for x in ['o1', 'o3', 'o4'])
-                    
-                    if is_reasoning_model:
-                        self.llm = AzureOpenAI(
-                            engine="model-router",
-                            api_version="2024-12-01-preview",
-                            model=self.config.LLM_MODEL,
-                            api_key=self.config.api_key,
-                            azure_endpoint=self.config.azure_endpoint
-                        )
-                    else:
-                        print(f"LLM Model:\n{self.config.LLM_MODEL} {self.config.azure_endpoint} {self.config.api_key}")
-                        self.llm = AzureOpenAI(
-                            engine="model-router",
-                            api_version="2025-01-01-preview",
-                            model=self.config.LLM_MODEL,
-                            temperature=self.config.LLM_TEMPERATURE,
-                            api_key=self.config.api_key,
-                            azure_endpoint=self.config.azure_endpoint
-                        )
-                    logger.info("✅ Using Azure OpenAI LLM")
-                else:
+            elif 'gpt' in llm_model:
                     # Standard OpenAI
-                    self.llm = OpenAI(
-                        model=self.config.LLM_MODEL,
-                        temperature=self.config.LLM_TEMPERATURE
-                    )
-                    logger.info("✅ Using OpenAI LLM")
-            else:
-                # Default to Azure OpenAI for unknown models
-                os.environ["api_key"] = self.config.api_key
-                os.environ["azure_endpoint"] = self.config.azure_endpoint
-                self.llm = AzureOpenAI(
-                    api_version="2025-01-01-preview",
-                    engine="model-router",
+                self.llm = OpenAI(
                     model=self.config.LLM_MODEL,
-                    # temperature=self.config.LLM_TEMPERATURE,
-                    api_key=self.config.api_key,
-                    azure_endpoint=self.config.azure_endpoint
+                    temperature=self.config.LLM_TEMPERATURE
                 )
-                logger.info(f"✅ Using Azure OpenAI LLM for model: {self.config.LLM_MODEL}")
+                logger.info("✅ Using OpenAI LLM")
+            # else:
+            #     # OpenAI models (including GPT-4, GPT-3.5, o1, o3, o4 series)
+            #     if hasattr(self.config, 'api_key') and hasattr(self.config, 'azure_endpoint'):
+            #         # Azure OpenAI
+            #         os.environ["api_key"] = self.config.api_key
+            #         os.environ["azure_endpoint"] = self.config.azure_endpoint
+                    
+            #         # o1, o3, and o4 reasoning models don't support temperature parameter
+            #         is_reasoning_model = any(x in llm_model for x in ['o1', 'o3', 'o4'])
+                    
+            #         if is_reasoning_model:
+            #             self.llm = AzureOpenAI(
+            #                 engine="model-router",
+            #                 api_version="2024-12-01-preview",
+            #                 model=self.config.LLM_MODEL,
+            #                 api_key=self.config.api_key,
+            #                 azure_endpoint=self.config.azure_endpoint
+            #             )
+            #         else:
+            #             print(f"LLM Model:\n{self.config.LLM_MODEL} {self.config.azure_endpoint} {self.config.api_key}")
+            #             self.llm = AzureOpenAI(
+            #                 engine="model-router",
+            #                 api_version="2025-01-01-preview",
+            #                 model=self.config.LLM_MODEL,
+            #                 temperature=self.config.LLM_TEMPERATURE,
+            #                 api_key=self.config.api_key,
+            #                 azure_endpoint=self.config.azure_endpoint
+            #             )
+            #         logger.info("✅ Using Azure OpenAI LLM")
             
             # Initialize Embedding model based on model name
-            if 'text-embedding-004' in embedding_model or 'text-embedding-005' in embedding_model:
+            if 'gemini-embedding-001' in embedding_model:
                 # Google embeddings
                 os.environ["GOOGLE_API_KEY"] = self.config.GOOGLE_API_KEY
                 self.embed_model = GoogleGenAIEmbedding(
@@ -173,35 +162,26 @@ class IntelligentResumeMatchingWorkflow(Workflow):
                 logger.info("✅ Using Google GenAI Embedding")
             elif 'text-embedding-3' in embedding_model or 'text-embedding-ada' in embedding_model:
                 # OpenAI embeddings
-                if hasattr(self.config, 'embed_api_key') and hasattr(self.config, 'embed_azure_endpoint'):
-                    # Azure OpenAI Embeddings
-                    self.embed_model = AzureOpenAIEmbedding(
-                        api_version="2025-01-01-preview",
-                        model=self.config.EMBEDDING_MODEL,
-                        api_key=self.config.embed_api_key,
-                        azure_endpoint=self.config.embed_azure_endpoint
-                    )
-                    logger.info("✅ Using Azure OpenAI Embedding")
-                else:
                     # Standard OpenAI Embeddings
-                    self.embed_model = OpenAIEmbedding(
-                        model=self.config.EMBEDDING_MODEL
-                    )
-                    logger.info("✅ Using OpenAI Embedding")
-            else:
-                # Default to Azure OpenAI embeddings
-                self.embed_model = AzureOpenAIEmbedding(
-                    api_version="2025-01-01-preview",
-                    model=self.config.EMBEDDING_MODEL,
-                    api_key=self.config.embed_api_key,
-                    azure_endpoint=self.config.embed_azure_endpoint
+                self.embed_model = OpenAIEmbedding(
+                    model=self.config.EMBEDDING_MODEL
                 )
-                logger.info(f"✅ Using Azure OpenAI Embedding for model: {self.config.EMBEDDING_MODEL}")
+                logger.info("✅ Using OpenAI Embedding")
+            # else:
+            #     # Default to Azure OpenAI embeddings
+            #     self.embed_model = AzureOpenAIEmbedding(
+            #         api_version="2025-01-01-preview",
+            #         model=self.config.EMBEDDING_MODEL,
+            #         api_key=self.config.embed_api_key,
+            #         azure_endpoint=self.config.embed_azure_endpoint
+            #     )
+            #     logger.info(f"✅ Using Azure OpenAI Embedding for model: {self.config.EMBEDDING_MODEL}")
 
             # self.pc = Pinecone()
             self.qd= AsyncQdrantClient(
                 api_key=self.config.QDRANT_API_KEY,
-                url=self.config.QDRANT_CLUSTER_ENDPOINT
+                url=self.config.QDRANT_CLUSTER_ENDPOINT,
+                timeout=30,  # was defaulting to a few seconds
             )
             
             self.monitor.end_step(step_name, success=True)
@@ -409,7 +389,7 @@ class IntelligentResumeMatchingWorkflow(Workflow):
             class RAGStringQueryEngine(CustomQueryEngine):
                 """RAG String Query Engine with proper feedback handling."""
                 retriever: BaseRetriever
-                llm: AzureOpenAI
+                llm: OpenAI
                 ctx: Optional[Any] = None
                 _human_feedbacks: List[Any] = []
                 _current_responses: List[Any] = []
@@ -417,7 +397,7 @@ class IntelligentResumeMatchingWorkflow(Workflow):
                 def __init__(
                     self,
                     retriever: BaseRetriever,
-                    llm: AzureOpenAI,
+                    llm: OpenAI,
                     ctx: Optional[Any] = None,
                     **kwargs
                 ):
@@ -527,42 +507,45 @@ class IntelligentResumeMatchingWorkflow(Workflow):
                     except Exception as e:
                         logger.error(f"❌ Query execution failed for {query_str}: {str(e)}")
                         return self._create_fallback_response(query_str)
+                _retrieval_semaphore = asyncio.Semaphore(5)
 
                 async def _execute_query_async(self, query_str: str, human_feedbacks: List, current_responses: List):
-                    """Async query execution with feedback handling"""
-                    try:
-                        logger.info(f"🔍 _execute_query_async for '{query_str}' with {len(human_feedbacks)} feedbacks")
-                        # print("self.retriever:\n", self.retriever)
-                        nodes = await self.retriever.aretrieve(query_str)
-                        # print("nodes:\n", nodes)
-                        context_str = "\n\n".join([n.node.get_content() for n in nodes])
-                        list_of_nodes= [n.node.get_content() for n in nodes]
-                        logger.info(f"Retrieved Nodes for query: {query_str} :\n {list_of_nodes} nodes")
 
-                        if not context_str.strip():
-                            logger.warning(f"⚠️ No context found for query: {query_str}")
-                            return self._create_fallback_response(query_str)
-                        
-                        # Build prompt with feedback
-                        prompt_text = self._build_prompt_with_feedback(query_str, context_str, human_feedbacks, current_responses)
-                        
-                        try:
-                            response_result = await self.llm.acomplete(prompt_text)
-                            response_text = response_result.text
-                            logger.info(f"✅ Generated response for '{query_str}': {response_text[:100]}...")
-                            
-                            return type('Response', (), {
-                                'response': response_text,
-                                'source_nodes': nodes
-                            })()
-                            
-                        except Exception as llm_error:
-                            logger.error(f"❌ Async LLM call failed for {query_str}: {str(llm_error)}")
-                            return self._create_fallback_response(query_str)
-                            
+                    """Async query execution with feedback handling"""
+                    logger.info(f"🔍 _execute_query_async for '{query_str}' with {len(human_feedbacks)} feedbacks")
+                    # print("self.retriever:\n", self.retriever)
+                    try:
+                        async with self._retrieval_semaphore:
+                            nodes = await self.retriever.aretrieve(query_str)
                     except Exception as e:
-                        logger.error(f"❌ Async query execution failed for {query_str}: {str(e)}")
+                        logger.error(f"❌ Async query execution failed for {query_str}: {type(e).__name__}: {e!r}")
                         return self._create_fallback_response(query_str)
+                    # print("nodes:\n", nodes)
+                    context_str = "\n\n".join([n.node.get_content() for n in nodes])
+                    list_of_nodes= [n.node.get_content() for n in nodes]
+                    logger.info(f"Retrieved Nodes for query: {query_str} :\n {list_of_nodes} nodes")
+
+                    if not context_str.strip():
+                        logger.warning(f"⚠️ No context found for query: {query_str}")
+                        return self._create_fallback_response(query_str)
+                    
+                    # Build prompt with feedback
+                    prompt_text = self._build_prompt_with_feedback(query_str, context_str, human_feedbacks, current_responses)
+                    
+                    try:
+                        response_result = await self.llm.acomplete(prompt_text)
+                        response_text = response_result.text
+                        logger.info(f"✅ Generated response for '{query_str}': {response_text[:100]}...")
+                        
+                        return type('Response', (), {
+                            'response': response_text,
+                            'source_nodes': nodes
+                        })()
+                        
+                    except Exception as llm_error:
+                        logger.error(f"❌ Async LLM call failed for {query_str}: {str(llm_error)}")
+                        return self._create_fallback_response(query_str)
+                        
 
                 def _create_fallback_response(self, query_str: str):
                     """Create a fallback response"""
@@ -1162,5 +1145,5 @@ The following information has been extracted from the candidate's resume and for
                 'error': str(e)
             }
 
-# ================================================================================
+#</engine.py>
 
