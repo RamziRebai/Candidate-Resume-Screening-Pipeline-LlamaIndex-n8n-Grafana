@@ -16,7 +16,7 @@ Production-ready AI pipeline that parses resumes and application forms, matches 
 
 Uploading Video_last.mp4…
 
-<img src="https://i.ibb.co/qF1M8DW7/Gemini-Generated-Image-igkyxdigkyxdigky.jpg" alt="Project Banner" width="500">
+<img src="https://i.ibb.co/qF1M8DW7/Gemini-Generated-Image-igkyxdigkyxdigky.jpg" alt="Project Banner" width="800">
 
 
 
