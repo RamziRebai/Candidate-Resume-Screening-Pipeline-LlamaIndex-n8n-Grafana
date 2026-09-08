@@ -773,8 +773,8 @@ async def _generate_pdf_xhtml2pdf(html: str, output_path: str) -> str:
             raise RuntimeError(
                 "Neither Playwright nor xhtml2pdf is available. "
                 "Install one of them:\n"
-                "  playwright install chromium   (recommended)\n"
-                "  pip install xhtml2pdf          (fallback)"
+                "  uv run playwright install chromium   (recommended)\n"
+                "  uv sync                                  (installs the xhtml2pdf fallback)"
             )
         with open(output_path, "wb") as out_f:
             status = pisa.CreatePDF(html, dest=out_f)
@@ -928,7 +928,7 @@ async def generate_and_upload_pdf(session_id: str, fields_data: List[Dict[str, A
         if not pdf_path.exists() or pdf_path.stat().st_size == 0:
             raise RuntimeError(
                 f"PDF was not created at {pdf_path}. Ensure Playwright Chromium is "
-                f"installed ('playwright install chromium') or that xhtml2pdf is available."
+                f"installed ('uv run playwright install chromium') or that xhtml2pdf is available."
             )
 
         result['pdf_generated'] = True

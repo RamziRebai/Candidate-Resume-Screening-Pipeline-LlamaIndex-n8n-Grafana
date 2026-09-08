@@ -24,5 +24,5 @@ This folder contains application lifecycle primitives used by FastAPI startup an
 If Playwright browser is missing, PDF generation can fall back to lower-quality alternatives where implemented. Install browser binaries with:
 
 ```bash
-playwright install chromium
+uv run playwright install chromium
 ```

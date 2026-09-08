@@ -76,7 +76,8 @@ backend/
   sql_queries/          # PostgreSQL setup and analytics SQL scripts
   uploads/              # Runtime uploaded files and generated reports
   main.py               # Local entrypoint
-  requirements.txt      # Python dependencies
+  pyproject.toml        # Python project and dependencies (managed by uv)
+  uv.lock               # Reproducible dependency lockfile
   SETUP_GOOGLE_DRIVE.md # Google Drive setup guide
 ```
 
@@ -129,30 +130,26 @@ Typical environment variables:
 
 ## Local Setup
 
-1. Create and activate a virtual environment.
-2. Install dependencies from the Python requirements file:
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) if it is not already available.
+2. Create the virtual environment and install the locked dependencies:
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-If your requirements file uses another name (for example `requirements.yxy`), run:
-
-```bash
-pip install -r requirements.yxy
-```
+Add or remove dependencies with `uv add <package>` and `uv remove <package>`; both commands update `pyproject.toml` and `uv.lock`.
 
 3. Install Playwright browser:
 
 ```bash
-playwright install chromium
+uv run playwright install chromium
 ```
 
 4. Configure `.env` with required keys.
 5. Run API:
 
 ```bash
-python main.py
+uv run python main.py
 ```
 
 Server defaults to `http://0.0.0.0:8000`.

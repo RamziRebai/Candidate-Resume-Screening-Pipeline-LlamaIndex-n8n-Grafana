@@ -128,6 +128,8 @@ async def get_session_status(session_id: str):
             "results": results
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to get session status: {e}")
         raise HTTPException(status_code=500, detail=str(e))

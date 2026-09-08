@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "⚠️  Playwright Chromium browser NOT found!  "
             "PDF generation will fall back to xhtml2pdf (lower quality).  "
-            "Run 'playwright install chromium' to fix this."
+            "Run 'uv run playwright install chromium' to fix this."
         )
     
     logger.info("API server started successfully")

@@ -18,9 +18,12 @@ This folder contains the canonical n8n workflow export used as an importable aut
 
 1. Open n8n.
 2. Import `n8n_workflow.json`.
-3. Configure credentials (PostgreSQL, Slack, and other integrations).
-4. Verify webhook URL matches backend `N8N_WEBHOOK_URL`.
-5. Activate workflow.
+3. Create a PostgreSQL credential and select it in `Store Session Data - Execute Query`, `Store Field Analytics`, `Store Feedback Analytics`, and `Store Confidence Scores`.
+4. Create a Slack credential, then select it and your destination channel in `Send Critical Alert v3.0`.
+5. Ensure the `rag_analytics` database schema and tables from `../sql_queries/` exist.
+6. Activate the workflow and copy its production webhook URL into the backend `N8N_WEBHOOK_URL` setting.
+
+The public export intentionally contains no credential IDs, account names, Slack channel, workflow ID, n8n instance ID, or tag IDs. It is inactive on import so credentials must be configured before execution.
 
 ## Note
 

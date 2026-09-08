@@ -50,7 +50,8 @@ backend/
 	sql_queries/          # Analytics queries for dashboards
 	uploads/              # Runtime artifacts (generated)
 	main.py               # Backend entrypoint
-	requirements.txt      # Python dependencies
+	pyproject.toml        # Python project and dependencies (managed by uv)
+	uv.lock               # Reproducible dependency lockfile
 frontend/
 	src/                  # React UI
 	public/               # Static assets
@@ -61,13 +62,13 @@ frontend/
 
 ### Backend
 
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first, then run:
+
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium
-python main.py
+uv sync
+uv run playwright install chromium
+uv run python main.py
 ```
 
 API defaults to `http://0.0.0.0:8000`.

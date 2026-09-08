@@ -10,13 +10,15 @@ This guide explains how to configure Google Drive integration for automatic PDF 
 
 ## Step 1: Install Required Dependencies
 
+The Google Drive dependencies are declared in `pyproject.toml`. Install the locked backend environment:
+
 ```bash
-pip install playwright google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+uv sync
 ```
 
 After installing playwright, run:
 ```bash
-playwright install chromium
+uv run playwright install chromium
 ```
 
 ## Step 2: Create Google Cloud Project
@@ -62,7 +64,7 @@ To get a folder ID:
 
 1. Start your FastAPI server:
    ```bash
-   python main.py
+   uv run python main.py
    ```
 
 2. When a user clicks "Skip and Approve All" for the first time:
@@ -81,7 +83,8 @@ After setup, your backend directory should contain:
 backend/
 ├── main.py
 ├── workflow_components.py
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
 ├── credentials.json       # OAuth credentials (DON'T commit to git!)
 ├── token.json            # Auto-generated after first auth (DON'T commit to git!)
 ├── .env
@@ -120,7 +123,7 @@ uploads/
 **Solution**: Download OAuth credentials from Google Cloud Console and place in backend directory.
 
 ### Issue: "Playwright browser not found"
-**Solution**: Run `playwright install chromium` to download browser binaries.
+**Solution**: Run `uv run playwright install chromium` to download browser binaries.
 
 ### Issue: "Google Drive upload failed"
 **Solution**: 
@@ -130,8 +133,8 @@ uploads/
 
 ### Issue: PDF generation fails
 **Solution**:
-- Ensure playwright is installed: `pip install playwright`
-- Install browser: `playwright install chromium`
+- Ensure the backend dependencies are installed: `uv sync`
+- Install browser: `uv run playwright install chromium`
 - Check that resume data contains required fields (First Name, Last Name, etc.)
 
 ## Optional: Skip Google Drive Upload

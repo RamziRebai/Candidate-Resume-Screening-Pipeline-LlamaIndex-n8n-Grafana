@@ -23,8 +23,6 @@ from llama_index.core.workflow import (
 )
 from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.embeddings.google_genai import GoogleGenAIEmbedding
-from llama_index.llms.azure_openai import AzureOpenAI
-from llama_index.embeddings.azure_openai import AzureOpenAIEmbedding
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qdrant_models
 
@@ -80,8 +78,10 @@ class IntelligentResumeMatchingWorkflow(Workflow):
             )
             points = result[0]
             if points:
-                logger.info(f"🔍 DIAGNOSTIC — Qdrant payload keys: {list(points[0].payload.keys())}")
-                logger.info(f"🔍 DIAGNOSTIC — Full payload sample: {points[0].payload}")
+                logger.debug(
+                    "Qdrant payload keys: %s",
+                    list(points[0].payload.keys()),
+                )
             else:
                 logger.warning("🔍 DIAGNOSTIC — No points found in collection yet")
         except Exception as e:
@@ -348,9 +348,7 @@ class IntelligentResumeMatchingWorkflow(Workflow):
             # print("Parsing result:\n", result.items.pages[0].items)
             list_nodes = [Document(text= t, ) for t in group_resume_sections(result.markdown.pages[0].markdown)]
             # parsed_doc= Document(text=" . ".join(list_nodes)) if list_nodes else None
-            print("-------------------------" * 10)
-            print("list_nodes:\n", list_nodes)
-            print("-------------------------" * 10)
+            logger.info("Parsed resume into %d sections", len(list_nodes))
             
             # Create ingestion pipeline
             ingestion_pipeline = IngestionPipeline(
