@@ -14,6 +14,7 @@ Production-ready AI pipeline that parses resumes and application forms, matches 
 - Powers Grafana dashboards on top of PostgreSQL for real-time and historical visibility
 
 
+![Alt Text](https://ibb.co/WpKWXHPG)
 
 Uploading Video_last.mp4…
 
